@@ -9,10 +9,11 @@ def start_interpreter():
     while(True):
         user_input = raw_input()
         if user_input.startswith("TO "):
-            pass  # rijesit cu kasnije
+            CMDS.create_proc(user_input)
+
             # ako vec postoji u commands baciti gesku "load is a primitive"
         else:
-            CMDS.execute([], user_input)
+            CMDS.execute(None, user_input)
 
 
 if __name__ == "__main__":
