@@ -4,15 +4,18 @@ from collections import namedtuple
 import os.path
 import gc
 import math
+import logging
 from itertools import chain
 from random import randint
 from inspect import getargspec
 from workspace import WS
 
-
 Var = namedtuple('Var', 'name value')
 Command = namedtuple('Command', 'name args')
 Procedure = namedtuple('Procedure', 'body args vars')
+
+TEST_VAR = ":TEST"
+logging.basicConfig(filename='example.log', level=logging.DEBUG)
 
 
 class LogoCommands(object):
@@ -50,10 +53,12 @@ class LogoCommands(object):
 
     def exec_proc(self, proc):
         for line in proc.body:
-            self.execute(proc, line)
-        return True
+            result = self.execute(proc, line)
+            if result:
+                return result
 
     def execute(self, proc, line):
+        logging.debug(line)
         try:
             parsed_line = self.parse_line(proc, line)
         except ValueError:
@@ -77,7 +82,9 @@ class LogoCommands(object):
                     pass
                 try:
                     result = func(proc, *args)
-                    if result is not None:
+                    if str(parsed_item) == "OUTPUT":
+                        return result
+                    elif result is not None:
                         arg_stack.append(result)
                 except ValueError:
                     return
@@ -90,7 +97,9 @@ class LogoCommands(object):
                     except IndexError:
                         print("NOT ENOUGH INPUTS TO %s" % parsed_item)
                         return
-                    self.exec_proc(proc)
+                    result = self.exec_proc(proc)
+                    if result is not None:
+                        arg_stack.append(result)
                 elif parsed_item.startswith("\""):
                     arg_stack.append(parsed_item[1:])
                 else:
@@ -108,7 +117,9 @@ class LogoCommands(object):
 
     def parse_line(self, proc, line):
         """Returns parsed line"""
-        args = parse_space_list(line)
+        if not isinstance(line, list):
+            line = parse_space_list(line)
+        args = connect_operators(line)
         if (not getattr(self, args[0], None) and
                 args[0] not in WS.proc):
             print_undefined(args[0])
@@ -131,9 +142,18 @@ class LogoCommands(object):
 
     def LOCAL(self, proc, var):
         if proc:
-            proc.vars.update({var, None})
+            print (var)
+            proc.vars[var] = None
         else:
             print("CAN ONLY DO THAT IN A PROCEDURE")
+            raise ValueError
+
+    def OUTPUT(self, proc, value):
+        if proc:
+            return value
+        else:
+            print("CAN ONLY DO THAT IN A PROCEDURE")
+            raise ValueError
 
     def MAKE(self, proc, name, value):
         WS.vars.update({name: value})
@@ -156,6 +176,17 @@ class LogoCommands(object):
             print_procedure(name, WS.proc[str(name)])
         else:
             print ("%s IS UNDEFINED" % name)
+
+    def DEFINEDP(self, proc, name):
+        if str(name) in WS.proc:
+            return True
+        return False
+
+    def READLIST(self, proc):
+        return raw_input().split()
+
+    def READWORD(self, proc):
+        return raw_input().split()[0]
 
     def INT(self, proc, value):
         if is_float(value):
@@ -186,12 +217,9 @@ class LogoCommands(object):
     def ERN(self, proc, name):
         if not isinstance(name, str):
             print_argument_error("ERN", name)
-        if name.startswith(":"):
-            try:
-                del WS.vars[name[1:]]
-            except KeyError:
-                print_undefined(name[1:])
-        else:
+        try:
+            del WS.vars[name]
+        except KeyError:
             print_undefined(name)
 
     def ERNS(self, proc):
@@ -273,6 +301,16 @@ class LogoCommands(object):
             return WS.vars[arg1]
         print ("%s HAS NO VALUE" % arg1)
 
+    def OR(self, proc, arg1, arg2):
+        if arg1 or arg2:
+            return True
+        return False
+
+    def AND(self, proc, arg1, arg2):
+        if arg1 and arg2:
+            return True
+        return False
+
     def PRODUCT(self, proc, arg1, arg2):
         if not is_float(arg1):
             print_argument_error("PRODUCT", arg1)
@@ -282,6 +320,16 @@ class LogoCommands(object):
             return int(arg1) * int(arg2)
         else:
             return float(arg1) * float(arg2)
+
+    def SUM(self, proc, arg1, arg2):
+        if not is_float(arg1):
+            print_argument_error("SUM", arg1)
+        elif not is_float(arg2):
+            print_argument_error("SUM", arg2)
+        elif is_int(arg1) and is_int(arg2):
+            return int(arg1) + int(arg2)
+        else:
+            return float(arg1) + float(arg2)
 
     def QUOTIENT(self, proc, arg1, arg2):
         if not is_float(arg1):
@@ -306,7 +354,21 @@ class LogoCommands(object):
         if not is_float(arg1):
             print_argument_error("COS", arg1)
         else:
-            return math.cos(float(arg1))
+            return math.cos(float(arg1) * math.pi / 180)
+
+    def SIN(self, proc, arg1):
+        if not is_float(arg1):
+            print_argument_error("SIN", arg1)
+        else:
+            return math.sin(float(arg1) * math.pi / 180)
+
+    def SQRT(self, proc, arg1):
+        if not is_float(arg1):
+            print_argument_error("SQRT", arg1)
+        elif float(arg1) < 0:
+            print_argument_error("SQRT", arg1)
+        else:
+            return math.sqrt(float(arg1))
 
     def REMAINDER(self, proc, arg1, arg2):
         if not is_int(arg1):
@@ -413,6 +475,43 @@ class LogoCommands(object):
         else:
             return lst[num - 1]
 
+    def IF(self, proc, pred, arg1, arg2=None):
+        pred = check_pred(pred)
+        if not isinstance(arg1, list):
+            print_argument_error("IF", arg1)
+        if not(isinstance(arg1, list) or not arg2):
+            print_argument_error("IF", arg2)
+        if pred:
+            if arg1:
+                self.execute(proc, arg1)
+        elif arg2:
+            self.execute(proc, arg2)
+
+    def TEST(self, proc, pred):
+        pred = check_pred(pred)
+        if proc:
+            proc.vars[TEST_VAR] = pred
+        else:
+            WS.vars[TEST_VAR] = pred
+
+    def IFTRUE(self, proc, lst):
+        if proc:
+            if TEST_VAR in proc.vars:
+                if proc.vars[TEST_VAR]:
+                    self.execute(proc, lst)
+        elif TEST_VAR in WS.vars:
+            if WS.vars[TEST_VAR]:
+                self.execute(proc, lst)
+
+    def IFFALSE(self, proc, lst):
+        if proc:
+            if TEST_VAR in proc.vars:
+                if not proc.vars[TEST_VAR]:
+                    self.execute(proc, lst)
+        elif TEST_VAR in WS.vars:
+            if not WS.vars[TEST_VAR]:
+                self.execute(proc, lst)
+
 
 CMDS = LogoCommands()
 
@@ -475,6 +574,29 @@ def is_float(name):
         return False
 
 
+def check_pred(pred):
+    if pred == "TRUE":
+        return True
+    elif pred == "FALSE":
+        return False
+    elif not isinstance(pred, bool):
+        print("%s IS NOT TRUE OR FALSE" % pred)
+        raise ValueError
+    return pred
+
+
+def connect_operators(line):
+    parsed_line = [line[0]]
+    for ind in xrange(len(line) - 1):
+        if not line[ind + 1] or not line[ind]:
+            parsed_line.append(line[ind + 1])
+        elif is_operator(line[ind][-1]) or is_operator(line[ind + 1][0]):
+            parsed_line[-1] += line[ind + 1]
+        else:
+            parsed_line.append(line[ind + 1])
+    return parsed_line
+
+
 def parse_space_list(line):
     args = []
     line = (ch for ch in line)
@@ -493,22 +615,27 @@ def parse_space_list(line):
     return args
 
 
+def convert(op):
+    if is_int(op):
+        return int(op)
+    elif is_float(op):
+        return float(op)
+    return op
+
+
 def parse_list(expr):
     lst = []
     op = ""
     for ch in expr:
         if ch == "]":
             if op:
-                lst.append(op)
+                lst.append(convert(op))
             return lst
         elif ch == "[":
             lst.append(parse_list(expr))
         elif ch == " ":
-            if is_int(op):
-                ch = int(op)
-            elif is_float(op):
-                ch = float(op)
-            lst.append(op)
+            if op:
+                lst.append(convert(op))
             op = ""
         else:
             op += ch
@@ -693,13 +820,12 @@ def search_file(f):
             return
         words = line.split()
         if not in_procedure and words[0] != "TO":
-            WS.vars.update({words[0]: words[1]})
+            WS.vars.update({words[0]: "".join(words[1:])})
         elif line.strip() == "END":
             WS.proc[name] = Procedure(body, args, {})
             in_procedure = False
         elif in_procedure:
             body.append(line[:-1])
-            print(body)
         else:
             name = words[1]
             args = words[2:]
