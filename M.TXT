@@ -1,3 +1,0 @@
-TO GG A 
-OUTPUT :A 
-END
