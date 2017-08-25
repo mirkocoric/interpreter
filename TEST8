@@ -1,0 +1,4 @@
+TO TEST8
+MAKE "A [3 4 5]
+IF LEN :A < 4 [PR 2]
+END
