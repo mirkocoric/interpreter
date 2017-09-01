@@ -1,0 +1,4 @@
+TO TEST12 N
+IF :N < 5 [PR 2 STOP]
+TEST12 :N - 1
+END

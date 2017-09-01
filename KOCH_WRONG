@@ -1,0 +1,10 @@
+TO KOCH N
+IF :N <= 5 [FD 5 STOP]
+KOCH :N / 2
+LT 45
+KOCH :N / 2
+RT 90
+KOCH :N / 2
+LT 45
+KOCH :N / 2
+END
