@@ -951,7 +951,8 @@ def parse_space_list(line):
             lst = ["EXECUTE"]
             for item in parse_space_list(line):
                 lst.append(item)
-            args.append(lst)
+            if len(lst) > 1:
+                args.append(lst)
         elif ch == ")":
             if operand:
                 args.append(operand)
@@ -1016,6 +1017,7 @@ def calc_expr(proc, expr):
     ret_expr = []
     last_num = False
     negative = False
+    #print(expr)
     if len(expr) == 1 and is_operator(expr[0]):
         return expr[0]
     if not any(is_operator(item) for item in expr):
