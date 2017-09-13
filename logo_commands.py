@@ -5,6 +5,7 @@ import os.path
 import gc
 import math
 import pickle
+import pdb
 import logging
 import time
 from itertools import chain
@@ -12,6 +13,7 @@ from random import randint
 from inspect import getargspec
 from workspace import WS
 from graphics import *
+from custom_exceptions import ParseError, ExecutionEnd, InterruptProc
 
 
 Var = namedtuple('Var', 'name value')
@@ -22,11 +24,11 @@ TEST_VAR = ":TEST"
 logging.basicConfig(filename='example.log', level=logging.DEBUG)
 
 
-class LogoCommands(object):
-    def __init__(self):
+class LogoInterpreter(object):
+    def __init__(self, read_gen=None, outstream=False):
         self.win = GraphWin("Turtle", 500, 500, autoflush=False)
-        self.cooX = 250
-        self.cooY = 250
+        self.X = 250
+        self.Y = 250
         self.degree = 0
         self.objects = []
         self.pen = True
@@ -35,56 +37,100 @@ class LogoCommands(object):
         self.drawn = False
         self.n_drawn = 0
         self.time_drawn = time.time()
+        self.output = []
+        self.outstream = outstream
+        if not read_gen:
+            self.read_gen = self.read()
+        else:
+            self.read_gen = read_gen
+
+    def print_out(self):
+        if self.outstream:
+            if not self.output:
+                return None
+            else:
+                if len(self.output) > 1:
+                    ret = self.output
+                    self.output = []
+                else:
+                    ret = self.output.pop()
+                return ret
+        else:
+            for line in self.output:
+                print (line)
+            self.output = []
+
+    def output_and_read(self):
+        """Prints lines and yields new input"""
+        print("TU")
+        self.print_out()
+        return self.read_gen.next()
+
+    def read(self):
+        while(True):
+            yield raw_input()
 
     def create_proc(self, line):
         par_line = line.split()
         if len(par_line) == 1:
-            print ("NOT ENOUGH INPUTS TO TO")
+            self.output.append("NOT ENOUGH INPUTS TO TO")
             return
         elif getattr(self, str(par_line[1]), None):
-            print("%s IS A PRIMITIVE" % par_line[1])
+            self.output.append("%s IS A PRIMITIVE" % par_line[1])
             return
         elif str(par_line[1]) in WS.proc:
-            print("%s IS ALREADY DEFINED" % par_line[1])
+            self.output.append("%s IS ALREADY DEFINED" % par_line[1])
             return
         for ind in xrange(2, len(par_line)):
             arg = par_line[ind]
             if not arg.startswith(":"):
-                try:
-                    print_argument_error("TO", arg)
-                except ValueError:
-                    pass
+                print_argument_error("TO", arg)
             else:
                 par_line[ind] = arg[1:]
 
         body = []
 
         while(True):
-            user_input = raw_input()
+            user_input = self.read_gen.next()
             if user_input == "END":
                 WS.proc[par_line[1]] = Procedure(body, par_line[2:], {})
-                print ("%s DEFINED" % par_line[1])
+                self.output.append("%s DEFINED" % par_line[1])
                 return
             else:
                 body.append(user_input)
 
     def exec_proc(self, proc):
         for line in proc.body:
-            result = self.execute(proc, line)
-            if result is not None:
-                return result
+            print("Poslana linija procedure %s" % line)
+            try:
+                result_gen = self.send_execute(proc, line)
+                result_gen.next()
+                while(True):
+                    received = yield
+                    result_gen.send(received)
+            except ExecutionEnd as exec_end:
+                if exec_end.message:
+                    print_parse_error(exec_end.message)
+                else:
+                    continue
+        raise ExecutionEnd()
+
 
     def divide_and_execute(self, proc, line):
-        lines = self.divide(proc, line)
+        lines = self.divide(proc, self.parse_line(proc, line))
         for line in lines:
-            result = self.execute(proc, line)
-            if result is not None:
-                return result
+            try:
+                result_gen = self.send_execute(proc, line)
+                result_gen.next()
+                #result_gen.send(line)
+            except ExecutionEnd as exec_end:
+                if exec_end.message:
+                    print_parse_error(exec_end.message)
+                else:
+                    continue
+            # print(self.output)
 
     def divide(self, proc, line):
-        #line = calc_expr(proc, line)
-        # if not isinstance(line, list):
-        #    return [line]
         line = (item for item in line)
         lines = []
         curr_list = []
@@ -104,7 +150,7 @@ class LogoCommands(object):
         for _ in xrange(self.max_args(item)):
             try:
                 arg = line.next()
-            except:
+            except StopIteration:
                 return line, curr_list
             curr_list.append(arg)
             if self.is_procedure(arg):
@@ -124,26 +170,53 @@ class LogoCommands(object):
         elif name in WS.proc:
             return len(WS.proc[name].args)
 
-    def execute(self, proc, line):
+    def send_execute(self, proc, line):
+        """Raises ExecutionEnd if the execute function is finished"""
+        ev_gen = self.execute(proc)
+        ev_gen.next()
+        print("Poslana linija %s" % line)
+        ev_gen.send(line)
+        while(True):
+            line = yield
+            ev_gen.send(line)
+
+    def execute(self, proc=None):
+        line = yield
+        print("TTT")
         if not line:
-            return
+            raise ExecutionEnd(None)
         logging.debug(line)
-        try:
-            parsed_line = self.parse_line(proc, line)
-        except ValueError:
-            return "ERROR"
+        parsed_line = self.parse_line(proc, line)
         logging.debug(parsed_line)
         arg_stack = []
         for parsed_item in reversed(parsed_line):
+            print("Executiram element %s" % parsed_item)
             if (isinstance(parsed_item, list) and parsed_item and
                     parsed_item[0] == "EXECUTE"):
-                arg_stack.append(self.execute(proc, parsed_item[1:]))
+                try:
+                    result_gen = self.send_execute(proc, parsed_item[1:])
+                    result_gen.next()
+                    while(True):
+                        line = yield
+                        result_gen.send(line)
+                except ExecutionEnd as exec_end:
+                    result = exec_end.message
+                print(result)
+                arg_stack.append(result)
             elif str(parsed_item).startswith("\""):
                 arg_stack.append(parsed_item[1:])
             elif not isinstance(parsed_item, str):
                 arg_stack.append(parsed_item)
             elif is_operator(parsed_item):
                 arg_stack.append(parsed_item)
+            elif parsed_item == "READLIST" or parsed_item == "READWORD":
+                print("TU")
+                arg = yield
+                print("TU2")
+                if parsed_item == "READLIST":
+                    arg_stack.append(arg.split())
+                else:
+                    arg_stack.append(arg.split()[0])
             elif getattr(self, str(parsed_item), None):
                 func = getattr(self, parsed_item, None)
                 args = []
@@ -165,25 +238,21 @@ class LogoCommands(object):
                         else:
                             args.append(arg)
                 except IndexError:
-                    print("NOT ENOUGH INPUTS TO %s" % parsed_item)
-                    return "ERROR"
+                    raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
                 try:
                     for _ in xrange(opt_args):
                         args.append(arg_stack.pop())
                 except IndexError:
                     pass
-                try:
-                    result = func(proc, *args)
-                    if (str(parsed_item) == "OUTPUT" or
-                        str(parsed_item) == "STOP" or
-                        str(parsed_item) == "ERROR" or
-                        (str(parsed_item).startswith("IF") and
-                            result is not None)):
-                        return result
-                    elif result is not None:
-                        arg_stack.append(result)
-                except ValueError:
-                    return "ERROR"
+                result = func(proc, *args)
+                if (str(parsed_item) == "OUTPUT" or
+                    str(parsed_item) == "STOP"):
+                    raise InterruptProc(result)
+                #elif (str(parsed_item).startswith("IF") and
+                #      result is not None):
+                #    raise ExecutionEnd(result)
+                elif result is not None:
+                    arg_stack.append(result)
             elif parsed_item in WS.proc:
                 proc_cpy = WS.proc[parsed_item]
                 new_proc = Procedure(proc_cpy.body, proc_cpy.args, {})
@@ -193,106 +262,119 @@ class LogoCommands(object):
                         arg = arg_stack.pop()
                         if is_operator(arg):
                             arg_stack.append(arg)
-                            arg = args.pop()
-                            arg_stack, args = check_operator(proc, arg_stack,
+                            arg=args.pop()
+                            arg_stack, args=check_operator(proc, arg_stack,
                                                              arg, args, True)
                         elif len(args) == len(new_proc.args) - 1:
-                            arg_stack, args = check_operator(proc, arg_stack,
+                            arg_stack, args=check_operator(proc, arg_stack,
                                                              arg, args, True)
                         else:
                             args.append(arg)
                     # logging.debug(parsed_item)
                     for arg in reversed(new_proc.args):
-                        new_proc.vars[arg] = args.pop()
+                        new_proc.vars[arg]=args.pop()
                         # logging.debug(new_proc.vars[arg])
                 except IndexError:
-                    print("NOT ENOUGH INPUTS TO %s" % parsed_item)
-                    return "ERROR"
-                result = self.exec_proc(new_proc)
-                if result == "STOP" or result == "ERROR":
+                    raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
+                proc_gen = self.exec_proc(new_proc)
+                try:
+                    proc_gen.next()
+                    while(True):
+                        print("MMM")
+                        line = yield
+                        print("Primljena linija %s" % line)
+                        print("NNN")
+                        proc_gen.send(line)
+                except InterruptProc as inter:
+                    result = inter.message
+                except ExecutionEnd:
+                    result = None
+                if result == "STOP":
                     pass
                 elif result is not None:
                     arg_stack.append(result)
             else:
-                try:
-                    print_undefined(parsed_item)
-                except ValueError:
-                    return "ERROR"
-
+                print_undefined(parsed_item)
+        print(arg_stack)
         if arg_stack:
-            expr = calc_expr(proc, arg_stack)
-            return expr
+            raise ExecutionEnd(calc_expr(proc, arg_stack))
+
+        print("Execute gotov")
+        raise ExecutionEnd()
 
     def parse_line(self, proc, line):
         """Returns parsed line"""
+        # print("Primljena linija: %s" % line)
         if not isinstance(line, list):
-            line = parse_space_list(line)
-        parsed_args = connect_operators([parse_args(proc, arg) for arg in line])
-        return [calc_expr(proc, arg) for arg in parsed_args]
+            line=parse_space_list(line)
+        # print("Razdvojen razmak: %s" % line)
+        parsed_operands=[parse_args(proc, arg) for arg in line]
+        # print("Razdvojen operand: %s" % parsed_operands)
+        parsed_variables=parse(proc, parsed_operands)
+        # print("Razdvojene varijable: %s" % parsed_operands)
+        conn_operands=connect_operators(parsed_variables)
+        # print("Spojeni operandi: %s" % conn_operands)
+        final_expr=[calc_expr(proc, arg) for arg in conn_operands]
+        # print("Izracunat rezultat: %s" % final_expr)
+        return final_expr
 
     def LOAD(self, proc, f_name):
         if not isinstance(f_name, str):
             print_argument_error("LOAD", f_name)
         elif not os.path.isfile(f_name):
             print_undefined(f_name)
-            return
         with open(f_name, 'r') as f:
             search_file(f)
 
     def SAVE(self, proc, f_name):
         if os.path.exists(f_name):
-            print("FILE ALREADY EXISTS")
-            return
+            raise ParseError("FILE ALREADY EXISTS")
         with open(f_name, 'w') as f:
             save_in_file(f)
 
     def LOCAL(self, proc, var):
         if proc:
-            proc.vars[var] = None
+            proc.vars[var]=None
         else:
-            print("CAN ONLY DO THAT IN A PROCEDURE")
-            raise ValueError
+            raise ParseError("CAN ONLY DO THAT IN A PROCEDURE")
 
     def STOP(self, proc):
         if proc:
             return "STOP"
         else:
-            print("CAN ONLY DO THAT IN A PROCEDURE")
-            raise ValueError
+            raise ParseError("CAN ONLY DO THAT IN A PROCEDURE")
 
     def OUTPUT(self, proc, value):
         if proc:
             return value
         else:
-            print("CAN ONLY DO THAT IN A PROCEDURE")
-            raise ValueError
+            raise ParseError("CAN ONLY DO THAT IN A PROCEDURE")
 
     def MAKE(self, proc, name, value):
         if proc:
             if name in proc.vars:
-                proc.vars[name] = value
+                proc.vars[name]=value
                 return
-        WS.vars[name] = value
+        WS.vars[name]=value
 
     def NAME(self, proc, value, name):
         self.MAKE(proc, name, value)
 
     def PONS(self, proc):
-        print_variables()
+        self.print_variables()
         if proc:
-            print_local_variables(proc)
+            self.print_local_variables(proc)
 
     def POALL(self, proc):
         for proc in WS.proc:
-            print_procedure(proc, WS.proc[proc])
-        for var in WS.vars:
-            print_variables()
+            self.print_procedure(proc, WS.proc[proc])
+        self.print_variables()
 
     def PO(self, proc, name):
         if str(name) in WS.proc:
-            print_procedure(name, WS.proc[str(name)])
+            self.print_procedure(name, WS.proc[str(name)])
         else:
-            print ("%s IS UNDEFINED" % name)
+            raise ParseError("%s IS UNDEFINED" % name)
 
     def DEFINEDP(self, proc, name):
         if str(name) in WS.proc:
@@ -300,10 +382,10 @@ class LogoCommands(object):
         return False
 
     def READLIST(self, proc):
-        return raw_input().split()
+        AssertionError("UNUTAR READLIST")
 
     def READWORD(self, proc):
-        return raw_input().split()[0]
+        AssertionError("UNUTAR READWORD")
 
     def INT(self, proc, value):
         if is_float(value):
@@ -312,16 +394,15 @@ class LogoCommands(object):
 
     def PR(self, proc, value):
         if isinstance(value, list):
-            for item in value:
-                print (item, end=" ")
-            print()
+            self.output.append(print_list(value))
         elif isinstance(value, bool):
             if value:
-                print("TRUE")
+                self.output.append("TRUE")
             else:
-                print("FALSE")
+                self.output.append("FALSE")
         else:
-            print (value)
+            self.output.append(value)
+            # pdb.set_trace()
 
     def RECYCLE(self, proc):
         gc.collect()
@@ -356,12 +437,12 @@ class LogoCommands(object):
         try:
             os.remove(name)
         except:
-            print("CANNOT ERASE THE FILE")
+            raise ParseError("CANNOT ERASE THE FILE")
 
     def CATALOG(self, proc, name):
-        files = [f for f in os.listdir('.') if os.path.isfile(f)]
+        files=[f for f in os.listdir('.') if os.path.isfile(f)]
         for f in files:
-            print (f)
+            output.append(f)
 
     def ASCII(self, proc, arg1):
         if isinstance(arg1, list):
@@ -420,7 +501,7 @@ class LogoCommands(object):
     def THING(self, proc, arg1):
         if arg1 in WS.vars:
             return WS.vars[arg1]
-        print ("%s HAS NO VALUE" % arg1)
+        raise ParseError("%s HAS NO VALUE" % arg1)
 
     def OR(self, proc, arg1, arg2):
         if arg1 or arg2:
@@ -459,8 +540,7 @@ class LogoCommands(object):
             print_argument_error("QUOTIENT", arg2)
         elif is_int(arg1) and is_int(arg2):
             if int(arg2) == 0:
-                print("CAN'T DIVIDE BY ZERO")
-                raise ValueError
+                raise ParseError("CAN'T DIVIDE BY ZERO")
             return int(arg1) / int(arg2)
         else:
             return float(arg1) / float(arg2)
@@ -505,17 +585,17 @@ class LogoCommands(object):
         else:
             return randint(0, int(arg1) - 1)
 
-    def LIST(self, proc, arg1, arg2=None):
-        var = [arg1]
+    def LIST(self, proc, arg1, arg2 = None):
+        var=[arg1]
         if arg2 is not None:
             var.append(arg2)
         return var
 
-    def SE(self, proc, arg1, arg2=None):
+    def SE(self, proc, arg1, arg2 = None):
         if isinstance(arg1, list):
-            var = list(arg1)
+            var=list(arg1)
         else:
-            var = [arg1]
+            var=[arg1]
         if isinstance(arg2, list):
             for item in arg2:
                 var.append(item)
@@ -523,10 +603,10 @@ class LogoCommands(object):
             var.append(arg2)
         return var
 
-    def SENTENCE(self, proc, arg1, arg2=None):
+    def SENTENCE(self, proc, arg1, arg2 = None):
         return self.SE(proc, arg1, arg2)
 
-    def WORD(self, proc, arg1, arg2=None):
+    def WORD(self, proc, arg1, arg2 = None):
         if isinstance(arg1, list):
             print_argument_error("WORD", arg1)
         elif isinstance(arg2, list):
@@ -539,13 +619,13 @@ class LogoCommands(object):
     def LPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
             print_argument_error("LPUT", arg2)
-        arg2 = arg2 + [arg1]
+        arg2=arg2 + [arg1]
         return arg2
 
     def FPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
             print_argument_error("FPUT", arg2)
-        arg2 = [arg1] + arg2
+        arg2=[arg1] + arg2
         return arg2
 
     def FIRST(self, proc, arg1):
@@ -587,17 +667,17 @@ class LogoCommands(object):
             print_argument_error("ITEM", lst)
         if not is_int(item):
             print_argument_error("ITEM", item)
-        num = int(item)
+        num=int(item)
         if num < 1:
             print_argument_error("ITEM", item)
         elif num > len(lst):
-            print("TOO FEW ITEMS IN %s" % lst)
-            raise ValueError
+            raise ParseError("TOO FEW ITEMS IN %s" % lst)
         else:
             return lst[num - 1]
 
-    def IF(self, proc, pred, arg1, arg2=None):
-        pred = check_pred(pred)
+    def IF(self, proc, pred, arg1, arg2 = None):
+        print(pred)
+        pred=check_pred(pred)
         if not isinstance(arg1, list):
             print_argument_error("IF", arg1)
         if not(isinstance(arg1, list) or not arg2):
@@ -608,13 +688,14 @@ class LogoCommands(object):
         elif arg2:
             return self.divide_and_execute(proc, arg2)
 
+
     def REPEAT(self, proc, num, arg1):
         if not isinstance(num, int):
             print_argument_error("REPEAT", num)
         if not(isinstance(arg1, list)):
             print_argument_error("REPEAT", arg1)
         for _ in xrange(num):
-            result = self.divide_and_execute(proc, arg1)
+            result=self.divide_and_execute(proc, arg1)
             if result:
                 break
 
@@ -622,11 +703,11 @@ class LogoCommands(object):
         return not check_pred(pred)
 
     def TEST(self, proc, pred):
-        pred = check_pred(pred)
+        pred=check_pred(pred)
         if proc:
-            proc.vars[TEST_VAR] = pred
+            proc.vars[TEST_VAR]=pred
         else:
-            WS.vars[TEST_VAR] = pred
+            WS.vars[TEST_VAR]=pred
 
     def IFTRUE(self, proc, lst):
         if proc:
@@ -647,29 +728,29 @@ class LogoCommands(object):
                 return self.divide_and_execute(proc, lst)
 
     def SHOWTURTLE(self, proc):
-        self.drawturtle = True
-        self.drawTurtle(proc, self.cooX, self.cooY)
+        self.drawturtle=True
+        self.drawTurtle(proc, self.X, self.Y)
 
     def ST(self, proc):
         self.SHOWTURTLE(proc)
 
     def HIDETURTLE(self, proc):
         self.turtle.undraw()
-        self.drawn = False
-        self.drawturtle = False
+        self.drawn=False
+        self.drawturtle=False
 
     def FORWARD(self, proc, distance):
-        x_ch = distance * self.SIN(proc, self.degree)
-        y_ch = distance * self.COS(proc, self.degree)
-        self.drawTurtle(proc, self.cooX + x_ch, self.cooY - y_ch)
+        x_ch=distance * self.SIN(proc, self.degree)
+        y_ch=distance * self.COS(proc, self.degree)
+        self.drawTurtle(proc, self.X + x_ch, self.Y - y_ch)
 
     def FD(self, proc, distance):
         return self.FORWARD(proc, distance)
 
     def BACK(self, proc, distance):
-        x_ch = distance * self.SIN(proc, self.degree)
-        y_ch = distance * self.COS(proc, self.degree)
-        self.drawTurtle(proc, self.cooX - x_ch, self.cooY + y_ch)
+        x_ch=distance * self.SIN(proc, self.degree)
+        y_ch=distance * self.COS(proc, self.degree)
+        self.drawTurtle(proc, self.X - x_ch, self.Y + y_ch)
 
     def BK(self, proc, distance):
         return self.BACK(proc, distance)
@@ -678,7 +759,7 @@ class LogoCommands(object):
         self.degree -= degree
         if self.degree < -180:
             self.degree += 360
-        self.drawTurtle(proc, self.cooX, self.cooY)
+        self.drawTurtle(proc, self.X, self.Y)
 
     def LT(self, proc, distance):
         return self.LEFT(proc, distance)
@@ -687,7 +768,7 @@ class LogoCommands(object):
         self.degree += degree
         if self.degree > 180:
             self.degree -= 360
-        self.drawTurtle(proc, self.cooX, self.cooY)
+        self.drawTurtle(proc, self.X, self.Y)
 
     def RT(self, proc, distance):
         return self.RIGHT(proc, distance)
@@ -709,20 +790,20 @@ class LogoCommands(object):
         self.drawTurtle(proc, lst[0] + 250, lst[1] + 250)
 
     def SETX(self, proc, X):
-        self.drawTurtle(proc, X + 250, self.cooY)
+        self.drawTurtle(proc, X + 250, self.Y)
 
     def SETY(self, proc, Y):
-        self.drawTurtle(proc, self.cooX, Y + 250)
+        self.drawTurtle(proc, self.X, Y + 250)
 
     def SETHEADING(self, proc, degree):
-        self.degree = degree
-        self.drawTurtle(proc, self.cooX, self.cooY)
+        self.degree=degree
+        self.drawTurtle(proc, self.X, self.Y)
 
     def PENDOWN(self, proc):
-        self.pen = True
+        self.pen=True
 
     def PENUP(self, proc):
-        self.pen = False
+        self.pen=False
 
     def HEADING(self, proc):
         return self.degree
@@ -730,7 +811,7 @@ class LogoCommands(object):
     def update(self):
         if time.time() - self.time_drawn > 1 / 100:
             update()
-            self.time_drawn = time.time()
+            self.time_drawn=time.time()
 
     def hideTurtle(self):
         if self.turtle:
@@ -739,7 +820,7 @@ class LogoCommands(object):
 
     def drawTurtle(self, proc, X, Y):
         if self.pen:
-            line = Line(Point(self.cooX, self.cooY),
+            line=Line(Point(self.X, self.Y),
                         Point(X, Y))
             self.objects.append(line)
             line.draw(self.win)
@@ -751,76 +832,103 @@ class LogoCommands(object):
             X += 500
         if Y < 0:
             Y += 500
-        dX = X - self.cooX
-        dY = Y - self.cooY
-        self.cooX = X
-        self.cooY = Y
+        dX = X - self.X
+        dY = Y - self.Y
+        self.X = X
+        self.Y = Y
         if self.drawturtle:
-            X1 = self.cooX - 20 * self.SIN(proc, self.degree + 30)
-            Y1 = self.cooY + 20 * self.COS(proc, self.degree + 30)
-            X2 = self.cooX - 20 * self.SIN(proc, self.degree - 30)
-            Y2 = self.cooY + 20 * self.COS(proc, self.degree - 30)
+            X1 = self.X - 20 * self.SIN(proc, self.degree + 30)
+            Y1 = self.Y + 20 * self.COS(proc, self.degree + 30)
+            X2 = self.X - 20 * self.SIN(proc, self.degree - 30)
+            Y2 = self.Y + 20 * self.COS(proc, self.degree - 30)
             if self.drawn:
                 self.turtle.move(dX, dY)
             else:
                 self.turtle = Polygon(
-                    Point(self.cooX, self.cooY), Point(
+                    Point(self.X, self.Y), Point(
                         X1, Y1), Point(X2, Y2))
                 self.turtle.draw(self.win)
                 self.drawn = True
         self.update()
 
+    def print_variable_list(self, var):
+        ret = "%s IS [ "
+        for item in var:
+            ret += str(item) + " "
+            ret += "]"
+        self.output.append(ret)
 
-CMDS = LogoCommands()
+    def print_variables(self):
+        for var in WS.vars:
+            if isinstance(var, list):
+                self.print_variable_list(var)
+            else:
+                self.output.append("%s IS %s" % (var, WS.vars[var]))
+
+    def print_local_variables(self, proc):
+        for var in proc.vars:
+            if isinstance(var, list):
+                self.print_variable_list(var)
+            else:
+                self.output.append("%s IS %s" % (var, proc.vars[var]))
+
+    def print_procedure(self, name, proc):
+        ret = "TO %s " % name
+        for arg in proc.args:
+            ret += ":%s " % arg
+        self.output.append(ret)
+        for line in proc.body:
+            self.output.append(line)
+        self.output.append("END")
+        self.output.append("")
 
 
 def print_argument_error(func, item):
-    print("%s DOESN'T LIKE %s AS INPUT" % (func, item))
-    raise ValueError
+    err = "%s DOESN'T LIKE " % func
+    if isinstance(item, list):
+        err += "["
+        err += print_list(item)
+        err += "]"
+        err += " AS INPUT"
+    else:
+        err += "%s AS INPUT" % item
+    raise ParseError(err)
 
 
 def print_parse_error(item):
-    print ("I DON'T KNOW WHAT TO DO WITH %s"
-           % item)
-    raise ValueError
+    err = "I DON'T KNOW WHAT TO DO WITH "
+    if isinstance(item, list):
+        err += "["
+        err += print_list(item)
+        err += "]"
+    else:
+        err += str(item)
+    raise ParseError(err)
 
 
 def print_undefined(item):
-    print ("I DON'T KNOW HOW TO %s" % item)
-    raise ValueError
+    err = "I DON'T KNOW HOW TO "
+    if isinstance(item, list):
+        err += "["
+        err += print_list(item)
+        err += "]"
+    else:
+        err += str(item)
+    raise ParseError(err)
 
 
-def print_variables():
-    for var in WS.vars:
-        if isinstance(var, list):
-            print ("%s IS [", end=" ")
-            for item in var:
-                print (item, end=" ")
-            print("]")
+def print_list(lst):
+    ret = ""
+    for num in xrange(len(lst)):
+        if isinstance(lst[num], list):
+            ret += "["
+            ret += print_list(lst[num])
+            ret += "]"
+        elif num < len(lst) - 1:
+            ret += str(lst[num]) + " "
         else:
-            print ("%s IS %s" % (var, WS.vars[var]))
-
-
-def print_local_variables(proc):
-    for var in proc.vars:
-        if isinstance(var, list):
-            print ("%s IS [", end=" ")
-            for item in var:
-                print (item, end=" ")
-            print("]")
-        else:
-            print ("%s IS %s" % (var, proc.vars[var]))
-
-
-def print_procedure(name, proc):
-    print ("TO %s" % name, end=" ")
-    for arg in proc.args:
-        print (":%s" % arg, end=" ")
-    print()
-    for line in proc.body:
-        print (line)
-    print ("END")
-    print()
+            ret += str(lst[num])
+    return ret
 
 
 def is_int(name):
@@ -854,8 +962,7 @@ def check_pred(pred):
     elif pred == "FALSE":
         return False
     elif not isinstance(pred, bool):
-        print("%s IS NOT TRUE OR FALSE" % pred)
-        raise ValueError
+        raise ParseError("%s IS NOT TRUE OR FALSE" % pred)
     return pred
 
 
@@ -877,7 +984,7 @@ def add_arg_check_operator(proc, arg_stack, new_item, func_ret):
         return arg_stack
     top = arg_stack.pop()
     if (is_operator(top) and not is_paranthesis(top) and
-        not isinstance(new_item, list) and not (func_ret and is_bool_op(top))):
+            not isinstance(new_item, list) and not (func_ret and is_bool_op(top))):
         item = []
         while(is_operator(top) and not is_paranthesis(top)):
             item.append(new_item)
@@ -904,30 +1011,35 @@ def add_arg_check_operator(proc, arg_stack, new_item, func_ret):
 
 def connect_operators(line):
     """line - list of parameters"""
-    parsed_line = [line[0]]
     for item in line:
-        if isinstance(item, list):
+        if (isinstance(item, list) and isinstance(item[0], list) and
+                len(item[0]) > 0 and item[0][0] == "EXECUTE"):
             return line
+    parsed_line = [line[0]]
     for ind in xrange(len(line) - 1):
         if not line[ind + 1] or not line[ind]:
             parsed_line.append(line[ind + 1])
         elif is_operator(parsed_line[-1][-1]) and is_bool_op(line[ind + 1][0]):
-            print("NOT ENOUGH INPUTS TO %s" % line[ind + 1][0])
-            raise(ValueError)
-        #elif (isinstance(parsed_line[-1], list) or
-        #len(line) > ind + 2 and isinstance(line[ind + 2][0], list)):
+            raise ParseError("NOT ENOUGH INPUTS TO %s" % line[ind + 1][0])
         elif (is_operator(parsed_line[-1][-1]) or
-              (is_operator(line[ind + 1][0]) and (not line[ind + 1][0] == "(" and
-                                                  not line[ind + 1][0] == "-"))):
-            if ((is_bool_op(line[ind + 1][0]) and len(parsed_line) > 1 and
-                (isinstance(parsed_line[-2][0], str)) and
-                (not parsed_line[-2][0].startswith("\"") and
-                not is_operator(parsed_line[-2][0]) and
-                parsed_line[-2][0] not in ["MAKE", "PR", "IF"]))) or (
-                len(line) > ind + 2 and isinstance(line[ind + 2][0], str) and
-                not line[ind + 2][0].startswith("\"") and
-                not is_operator(line[ind + 2][0])):
-                    return line
+              (is_operator(line[ind + 1][0]) and
+               (not line[ind + 1][0] == "(" and
+                not line[ind + 1][0] == "-"))):
+            func_bf = (is_bool_op(line[ind + 1][0]) and
+                       len(parsed_line) > 1 and
+                       isinstance(parsed_line[-2][0], str) and
+                       not parsed_line[-2][0].startswith("\"") and
+                       not is_operator(parsed_line[-2][0]) and
+                       parsed_line[-2][0] not in
+                       ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
+            func_af = (len(line) > ind + 2 and
+                       isinstance(line[ind + 2][0], str) and
+                       not line[ind + 2][0].startswith("\"") and
+                       not is_operator(line[ind + 2][0]) and
+                       line[ind + 2][0] not in
+                       ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
+            if func_bf or func_af:
+                return line
             elif not isinstance(line[ind + 1], str):
                 for item in line[ind + 1]:
                     parsed_line[-1].append(item)
@@ -1006,8 +1118,7 @@ def check_valid(expr):
             is_plus_minus(expr[-2]) or is_em_prod_div(expr[-2])):
         valid = False
     if not valid:
-        print("NOT ENOUGH INPUTS TO %s" % expr[-1])
-        raise ValueError
+        raise ParseError("NOT ENOUGH INPUTS TO %s" % expr[-1])
 
 
 def calc_expr(proc, expr):
@@ -1017,7 +1128,6 @@ def calc_expr(proc, expr):
     ret_expr = []
     last_num = False
     negative = False
-    #print(expr)
     if len(expr) == 1 and is_operator(expr[0]):
         return expr[0]
     if not any(is_operator(item) for item in expr):
@@ -1026,10 +1136,7 @@ def calc_expr(proc, expr):
         else:
             return parse(proc, expr)
     if any(isinstance(item, list) for item in expr):
-        #print(expr[0])
         return expr
-    #if isinstance(expr, str):
-    #   check_valid(expr)
     chs = (ch for ch in expr)
     for item in chs:
         if isinstance(item, list):
@@ -1040,7 +1147,7 @@ def calc_expr(proc, expr):
                     operator = operators.pop()
                 except:
                     return expr
-                    #u slucaju da se moze kasnije spojiti
+                    # u slucaju da se moze kasnije spojiti
                 if operator == "(":
                     break
                 operands.append(perform_operation(operands, operator))
@@ -1051,8 +1158,7 @@ def calc_expr(proc, expr):
                 try:
                     op = parse(proc, chs.next())
                 except StopIteration:
-                    print("NOT ENOUGH INPUTS TO -")
-                    raise ValueError
+                    raise ParseError("NOT ENOUGH INPUTS TO -")
                 operands.append(op)
                 operands.append(perform_operation(operands, item))
                 last_num = True
@@ -1088,25 +1194,33 @@ def parse_str(item):
 
 
 def parse(proc, item):
-    if is_int(item):
+    if isinstance(item, list):
+        return item
+    #    return [parse(proc, i) for i in item]
+    elif is_int(item):
         return int(item)
     elif is_float(item):
         return float(item)
     elif item.startswith(":"):
+        for ind in xrange(len(item)):
+            if is_operator(item[ind]):
+                ind -= 1
+                break
+        # var_name = item[1:ind + 1]
+        var_name = item[1:]
         if proc:
-            if item[1:] in proc.vars:
-                var = proc.vars.get(item[1:])
+            if var_name in proc.vars:
+                var = proc.vars.get(var_name)
                 if isinstance(var, str):
                     var = "\"" + var
                 return var
-        if item[1:] in WS.vars:
-            var = WS.vars.get(item[1:])
+        if var_name in WS.vars:
+            var = WS.vars.get(var_name)
             if isinstance(var, str):
                 var = "\"" + var
             return var
         else:
-            print ("%s HAS NO VALUE" % item[1:])
-            raise ValueError('VARIABLE DOESNT EXIST')
+            raise ParseError("%s HAS NO VALUE" % var_name)
     else:
         return item
 
@@ -1115,8 +1229,7 @@ def perform_operation(operands, operator):
     try:
         operand2 = operands.pop()
     except IndexError:
-        print("NOT ENOUGH INPUTS TO %s" % operator)
-        raise ValueError
+        raise ParseError("NOT ENOUGH INPUTS TO %s" % operator)
     try:
         operand1 = operands.pop()
     except IndexError:
@@ -1194,8 +1307,7 @@ def parse_args(proc, arg):
                 l.append(operand)
                 operand = ""
             elif is_bool_op(ch) and l:
-                print("NOT ENOUGH INPUTS TO %s" % ch)
-                raise(ValueError)
+                raise ParseError("NOT ENOUGH INPUTS TO %s" % ch)
             if ch == "-":
                 l.append("+")
             l.append(ch)

@@ -1,0 +1,10 @@
+TO MTREE N M D
+IF :N < 10 [FD :N BK :N STOP]
+FD :N / :D
+IF :M < 2 [BK :N / :D STOP]
+LT 45
+REPEAT :M - 1 [MTREE :N / :D :M - 1 :D RT (90 / (:M - 1))]
+MTREE :N / :D :M - 1 :D
+LT 45
+BK :N / :D
+END
