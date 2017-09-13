@@ -1,10 +1,10 @@
 
-from logo_commands import LogoInterpreter
+import math
+from logo_commands import LogoInterpreter, is_float
 from custom_exceptions import ExecutionEnd, ParseError
 
 
 class TestInterpreter():
-
     def __init__(self):
         self.it = LogoInterpreter(outstream=True)
         self.ev_gen = None
@@ -15,28 +15,36 @@ class TestInterpreter():
             self.ev_gen.next()
         try:
             self.ev_gen.send(line)
-            # self.ev_gen.next()
         except StopIteration:
             pass
         except ExecutionEnd:
             pass
         except ParseError as err:
-            print("TU2")
             self.it.PR([], err.message)
         ret = self.it.print_out()
-        print("TU2", ret)
         return ret
 
-    def check(self, line, result):
-        self.assertEqual(result, line)
-
-    def assertEqual(self, inn, out):
-        print(type(inn))
-        print(type(out))
-        if inn == out:
+    def check(self, line, result, line2=None):
+        if is_float(line) and is_float(result):
+            if math.fabs(line - result) > 0.0001:
+                raise AssertionError("%s != %s" % (line, result))
+            else:
+                print("OK")
+        elif line == result or (line2 is not None and line2 == result):
             print "OK"
         else:
-            raise AssertionError("%s != %s" % (inn, out))
+            raise AssertionError("%s != %s" % (line, result))
+
+    def check_line(self, line, result):
+        if not isinstance(line, list):
+            raise AssertionError("%s IS NOT LIST" % line)
+        for ind in xrange(len(line)):
+            if not is_float(line[ind]):
+                raise AssertionError("%s IS NOT INTEGER" % line[ind])
+        self.check(line[0], result.getP1().getX())
+        self.check(line[1], result.getP1().getY())
+        self.check(line[2], result.getP2().getX())
+        self.check(line[3], result.getP2().getY())
 
     def test_fib(self):
         result = self.send('LOAD "TEST10')
@@ -80,27 +88,50 @@ class TestInterpreter():
                     "OK, LET'S GO.",
                     "DOES THIS ANIMAL HAVE HORNS"], result)
         result = self.send("YES", True)
-        self.check(["IS IT A BULL"], result)
+        self.check("IS IT A BULL", result)
         result = self.send("YES", True)
-        self.check(["THAT WAS FUN. WANNA TRY AGAIN?"], result)
+        self.check("THAT WAS FUN. WANNA TRY AGAIN?", result,
+                   ["LOGO MUST BE A GREAT LANGUAGE.",
+                    "THAT WAS FUN. WANNA TRY AGAIN?"])
         result = self.send("YES", True)
-        self.check(["DOES THIS ANIMAL HAVE HORNS"], result)
+        self.check("DOES THIS ANIMAL HAVE HORNS", result)
         result = self.send("NO", True)
         self.check(["WELL, I AM NOT TOO SHARP TODAY.",
                     "I GIVE UP.", "JUST WHAT KIND OF BEAST",
                     "DID YOU HAVE IN MIND?"], result)
         result = self.send("ELEPHANT", True)
-        self.check(["TELL ME SOMETHING SPECIAL ABOUT AN ELEPHANT"], result)
+        self.check(["TELL ME SOMETHING SPECIAL", "ABOUT AN ELEPHANT"], result)
         result = self.send("ELEPHANT IS GRAY", True)
-        self.check(["THAT WAS FUN. WANNA TRY AGAIN?"], result)
+        self.check("THAT WAS FUN. WANNA TRY AGAIN?", result,
+                   ["LOGO MUST BE A GREAT LANGUAGE.",
+                    "THAT WAS FUN. WANNA TRY AGAIN?"])
         result = self.send("YES", True)
-        self.check(["IS THIS ANIMAL GRAY"], result)
+        self.check("IS THIS ANIMAL GRAY", result)
         result = self.send("YES", True)
-        self.check(["IS IT AN ELEPHANT"], result)
+        self.check("IS IT AN ELEPHANT", result)
         result = self.send("YES", True)
-        self.check(["THAT WAS FUN. WANNA TRY AGAIN?"], result)
+        self.check("THAT WAS FUN. WANNA TRY AGAIN?",  result,
+                   ["LOGO MUST BE A GREAT LANGUAGE.",
+                    "THAT WAS FUN. WANNA TRY AGAIN?"])
         result = self.send("NO", True)
         self.check(None, result)
+
+    def koch_test(self):
+        result = self.send('LOAD "KOCH')
+        self.check(None, result)
+        result = self.send('KOCH 6')
+        self.check(7, len(self.it.objects))
+        self.check_line([250, 250, 250, 245], self.it.objects[0])
+        self.check_line([250, 245, 250, 245], self.it.objects[1])
+        self.check_line([250, 245, 246.4644, 241.4644], self.it.objects[2])
+        self.check_line([246.4644, 241.4644, 246.4644, 241.4644],
+                        self.it.objects[3])
+        self.check_line([246.4644, 241.4644, 250, 237.9289],
+                        self.it.objects[4])
+        self.check_line([250, 237.9289, 250, 237.9289],
+                        self.it.objects[5])
+        self.check_line([250, 237.9289, 250, 232.9289],
+                        self.it.objects[6])
 
 
 if __name__ == "__main__":
@@ -108,3 +139,4 @@ if __name__ == "__main__":
     TestInterpreter().test_fib()
     TestInterpreter().stripname_test()
     TestInterpreter().animal_test()
+    TestInterpreter().koch_test()

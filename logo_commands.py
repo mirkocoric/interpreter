@@ -62,7 +62,6 @@ class LogoInterpreter(object):
 
     def output_and_read(self):
         """Prints lines and yields new input"""
-        print("TU")
         self.print_out()
         return self.read_gen.next()
 
@@ -101,7 +100,6 @@ class LogoInterpreter(object):
 
     def exec_proc(self, proc):
         for line in proc.body:
-            print("Poslana linija procedure %s" % line)
             try:
                 result_gen = self.send_execute(proc, line)
                 result_gen.next()
@@ -115,20 +113,20 @@ class LogoInterpreter(object):
                     continue
         raise ExecutionEnd()
 
-
     def divide_and_execute(self, proc, line):
         lines = self.divide(proc, self.parse_line(proc, line))
         for line in lines:
             try:
                 result_gen = self.send_execute(proc, line)
                 result_gen.next()
-                #result_gen.send(line)
+                while(True):
+                    line = yield
+                    result_gen.send(line)
             except ExecutionEnd as exec_end:
                 if exec_end.message:
                     print_parse_error(exec_end.message)
                 else:
                     continue
-            # print(self.output)
 
     def divide(self, proc, line):
         line = (item for item in line)
@@ -174,7 +172,6 @@ class LogoInterpreter(object):
         """Raises ExecutionEnd if the execute function is finished"""
         ev_gen = self.execute(proc)
         ev_gen.next()
-        print("Poslana linija %s" % line)
         ev_gen.send(line)
         while(True):
             line = yield
@@ -182,7 +179,6 @@ class LogoInterpreter(object):
 
     def execute(self, proc=None):
         line = yield
-        print("TTT")
         if not line:
             raise ExecutionEnd(None)
         logging.debug(line)
@@ -190,7 +186,6 @@ class LogoInterpreter(object):
         logging.debug(parsed_line)
         arg_stack = []
         for parsed_item in reversed(parsed_line):
-            print("Executiram element %s" % parsed_item)
             if (isinstance(parsed_item, list) and parsed_item and
                     parsed_item[0] == "EXECUTE"):
                 try:
@@ -201,7 +196,6 @@ class LogoInterpreter(object):
                         result_gen.send(line)
                 except ExecutionEnd as exec_end:
                     result = exec_end.message
-                print(result)
                 arg_stack.append(result)
             elif str(parsed_item).startswith("\""):
                 arg_stack.append(parsed_item[1:])
@@ -210,9 +204,7 @@ class LogoInterpreter(object):
             elif is_operator(parsed_item):
                 arg_stack.append(parsed_item)
             elif parsed_item == "READLIST" or parsed_item == "READWORD":
-                print("TU")
                 arg = yield
-                print("TU2")
                 if parsed_item == "READLIST":
                     arg_stack.append(arg.split())
                 else:
@@ -244,13 +236,22 @@ class LogoInterpreter(object):
                         args.append(arg_stack.pop())
                 except IndexError:
                     pass
-                result = func(proc, *args)
+                if parsed_item in ["IF", "REPEAT"]:
+                    if_gen = func(proc, *args)
+                    try:
+                        if_gen.next()
+                        while(True):
+                            line = yield
+                            if_gen.send(line)
+                    except ExecutionEnd as exec_end:
+                        result = exec_end.message
+                    except StopIteration:
+                        raise ExecutionEnd()
+                else:
+                    result = func(proc, *args)
                 if (str(parsed_item) == "OUTPUT" or
                     str(parsed_item) == "STOP"):
                     raise InterruptProc(result)
-                #elif (str(parsed_item).startswith("IF") and
-                #      result is not None):
-                #    raise ExecutionEnd(result)
                 elif result is not None:
                     arg_stack.append(result)
             elif parsed_item in WS.proc:
@@ -262,28 +263,23 @@ class LogoInterpreter(object):
                         arg = arg_stack.pop()
                         if is_operator(arg):
                             arg_stack.append(arg)
-                            arg=args.pop()
-                            arg_stack, args=check_operator(proc, arg_stack,
+                            arg = args.pop()
+                            arg_stack, args = check_operator(proc, arg_stack,
                                                              arg, args, True)
                         elif len(args) == len(new_proc.args) - 1:
-                            arg_stack, args=check_operator(proc, arg_stack,
+                            arg_stack, args = check_operator(proc, arg_stack,
                                                              arg, args, True)
                         else:
                             args.append(arg)
-                    # logging.debug(parsed_item)
                     for arg in reversed(new_proc.args):
-                        new_proc.vars[arg]=args.pop()
-                        # logging.debug(new_proc.vars[arg])
+                        new_proc.vars[arg] = args.pop()
                 except IndexError:
                     raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
                 proc_gen = self.exec_proc(new_proc)
                 try:
                     proc_gen.next()
                     while(True):
-                        print("MMM")
                         line = yield
-                        print("Primljena linija %s" % line)
-                        print("NNN")
                         proc_gen.send(line)
                 except InterruptProc as inter:
                     result = inter.message
@@ -295,28 +291,18 @@ class LogoInterpreter(object):
                     arg_stack.append(result)
             else:
                 print_undefined(parsed_item)
-        print(arg_stack)
         if arg_stack:
             raise ExecutionEnd(calc_expr(proc, arg_stack))
-
-        print("Execute gotov")
         raise ExecutionEnd()
 
     def parse_line(self, proc, line):
         """Returns parsed line"""
-        # print("Primljena linija: %s" % line)
         if not isinstance(line, list):
-            line=parse_space_list(line)
-        # print("Razdvojen razmak: %s" % line)
-        parsed_operands=[parse_args(proc, arg) for arg in line]
-        # print("Razdvojen operand: %s" % parsed_operands)
-        parsed_variables=parse(proc, parsed_operands)
-        # print("Razdvojene varijable: %s" % parsed_operands)
-        conn_operands=connect_operators(parsed_variables)
-        # print("Spojeni operandi: %s" % conn_operands)
-        final_expr=[calc_expr(proc, arg) for arg in conn_operands]
-        # print("Izracunat rezultat: %s" % final_expr)
-        return final_expr
+            line = parse_space_list(line)
+        parsed_operands = [parse_args(proc, arg) for arg in line]
+        parsed_variables = parse(proc, parsed_operands)
+        conn_operands = connect_operators(parsed_variables)
+        return [calc_expr(proc, arg) for arg in conn_operands]
 
     def LOAD(self, proc, f_name):
         if not isinstance(f_name, str):
@@ -353,9 +339,9 @@ class LogoInterpreter(object):
     def MAKE(self, proc, name, value):
         if proc:
             if name in proc.vars:
-                proc.vars[name]=value
+                proc.vars[name] = value
                 return
-        WS.vars[name]=value
+        WS.vars[name] = value
 
     def NAME(self, proc, value, name):
         self.MAKE(proc, name, value)
@@ -402,7 +388,6 @@ class LogoInterpreter(object):
                 self.output.append("FALSE")
         else:
             self.output.append(value)
-            # pdb.set_trace()
 
     def RECYCLE(self, proc):
         gc.collect()
@@ -440,7 +425,7 @@ class LogoInterpreter(object):
             raise ParseError("CANNOT ERASE THE FILE")
 
     def CATALOG(self, proc, name):
-        files=[f for f in os.listdir('.') if os.path.isfile(f)]
+        files = [f for f in os.listdir('.') if os.path.isfile(f)]
         for f in files:
             output.append(f)
 
@@ -585,17 +570,17 @@ class LogoInterpreter(object):
         else:
             return randint(0, int(arg1) - 1)
 
-    def LIST(self, proc, arg1, arg2 = None):
-        var=[arg1]
+    def LIST(self, proc, arg1, arg2=None):
+        var = [arg1]
         if arg2 is not None:
             var.append(arg2)
         return var
 
-    def SE(self, proc, arg1, arg2 = None):
+    def SE(self, proc, arg1, arg2=None):
         if isinstance(arg1, list):
-            var=list(arg1)
+            var = list(arg1)
         else:
-            var=[arg1]
+            var = [arg1]
         if isinstance(arg2, list):
             for item in arg2:
                 var.append(item)
@@ -603,10 +588,10 @@ class LogoInterpreter(object):
             var.append(arg2)
         return var
 
-    def SENTENCE(self, proc, arg1, arg2 = None):
+    def SENTENCE(self, proc, arg1, arg2=None):
         return self.SE(proc, arg1, arg2)
 
-    def WORD(self, proc, arg1, arg2 = None):
+    def WORD(self, proc, arg1, arg2=None):
         if isinstance(arg1, list):
             print_argument_error("WORD", arg1)
         elif isinstance(arg2, list):
@@ -619,13 +604,13 @@ class LogoInterpreter(object):
     def LPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
             print_argument_error("LPUT", arg2)
-        arg2=arg2 + [arg1]
+        arg2 = arg2 + [arg1]
         return arg2
 
     def FPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
             print_argument_error("FPUT", arg2)
-        arg2=[arg1] + arg2
+        arg2 = [arg1] + arg2
         return arg2
 
     def FIRST(self, proc, arg1):
@@ -667,7 +652,7 @@ class LogoInterpreter(object):
             print_argument_error("ITEM", lst)
         if not is_int(item):
             print_argument_error("ITEM", item)
-        num=int(item)
+        num = int(item)
         if num < 1:
             print_argument_error("ITEM", item)
         elif num > len(lst):
@@ -675,19 +660,25 @@ class LogoInterpreter(object):
         else:
             return lst[num - 1]
 
-    def IF(self, proc, pred, arg1, arg2 = None):
-        print(pred)
-        pred=check_pred(pred)
+    def IF(self, proc, pred, arg1, arg2=None):
+        pred = check_pred(pred)
         if not isinstance(arg1, list):
             print_argument_error("IF", arg1)
         if not(isinstance(arg1, list) or not arg2):
             print_argument_error("IF", arg2)
         if pred:
             if arg1:
-                return self.divide_and_execute(proc, arg1)
+                div_and_exec = self.divide_and_execute(proc, arg1)
+                div_and_exec.next()
+                while(True):
+                    line = yield
+                    div_and_exec.send(line)
         elif arg2:
-            return self.divide_and_execute(proc, arg2)
-
+            div_and_exec = self.divide_and_execute(proc, arg2)
+            div_and_exec.next()
+            while(True):
+                line = yield
+                div_and_exec.send(line)
 
     def REPEAT(self, proc, num, arg1):
         if not isinstance(num, int):
@@ -695,40 +686,23 @@ class LogoInterpreter(object):
         if not(isinstance(arg1, list)):
             print_argument_error("REPEAT", arg1)
         for _ in xrange(num):
-            result=self.divide_and_execute(proc, arg1)
-            if result:
-                break
+            div_and_exec = self.divide_and_execute(proc, arg1)
+            try:
+                div_and_exec.next()
+                while(True):
+                    line = yield
+                    div_and_exec.send(line)
+            except ExecutionEnd as exec_end:
+                if exec_end.message:
+                    break
+            except StopIteration:
+                continue
 
     def NOT(self, proc, pred):
         return not check_pred(pred)
 
-    def TEST(self, proc, pred):
-        pred=check_pred(pred)
-        if proc:
-            proc.vars[TEST_VAR]=pred
-        else:
-            WS.vars[TEST_VAR]=pred
-
-    def IFTRUE(self, proc, lst):
-        if proc:
-            if TEST_VAR in proc.vars:
-                if proc.vars[TEST_VAR]:
-                    return self.divide_and_execute(proc, lst)
-        elif TEST_VAR in WS.vars:
-            if WS.vars[TEST_VAR]:
-                return self.divide_and_execute(proc, lst)
-
-    def IFFALSE(self, proc, lst):
-        if proc:
-            if TEST_VAR in proc.vars:
-                if not proc.vars[TEST_VAR]:
-                    return self.divide_and_execute(proc, lst)
-        elif TEST_VAR in WS.vars:
-            if not WS.vars[TEST_VAR]:
-                return self.divide_and_execute(proc, lst)
-
     def SHOWTURTLE(self, proc):
-        self.drawturtle=True
+        self.drawturtle = True
         self.drawTurtle(proc, self.X, self.Y)
 
     def ST(self, proc):
@@ -736,20 +710,20 @@ class LogoInterpreter(object):
 
     def HIDETURTLE(self, proc):
         self.turtle.undraw()
-        self.drawn=False
-        self.drawturtle=False
+        self.drawn = False
+        self.drawturtle = False
 
     def FORWARD(self, proc, distance):
-        x_ch=distance * self.SIN(proc, self.degree)
-        y_ch=distance * self.COS(proc, self.degree)
+        x_ch = distance * self.SIN(proc, self.degree)
+        y_ch = distance * self.COS(proc, self.degree)
         self.drawTurtle(proc, self.X + x_ch, self.Y - y_ch)
 
     def FD(self, proc, distance):
         return self.FORWARD(proc, distance)
 
     def BACK(self, proc, distance):
-        x_ch=distance * self.SIN(proc, self.degree)
-        y_ch=distance * self.COS(proc, self.degree)
+        x_ch = distance * self.SIN(proc, self.degree)
+        y_ch = distance * self.COS(proc, self.degree)
         self.drawTurtle(proc, self.X - x_ch, self.Y + y_ch)
 
     def BK(self, proc, distance):
@@ -796,14 +770,14 @@ class LogoInterpreter(object):
         self.drawTurtle(proc, self.X, Y + 250)
 
     def SETHEADING(self, proc, degree):
-        self.degree=degree
+        self.degree = degree
         self.drawTurtle(proc, self.X, self.Y)
 
     def PENDOWN(self, proc):
-        self.pen=True
+        self.pen = True
 
     def PENUP(self, proc):
-        self.pen=False
+        self.pen = False
 
     def HEADING(self, proc):
         return self.degree
@@ -811,7 +785,7 @@ class LogoInterpreter(object):
     def update(self):
         if time.time() - self.time_drawn > 1 / 100:
             update()
-            self.time_drawn=time.time()
+            self.time_drawn = time.time()
 
     def hideTurtle(self):
         if self.turtle:
@@ -820,8 +794,7 @@ class LogoInterpreter(object):
 
     def drawTurtle(self, proc, X, Y):
         if self.pen:
-            line=Line(Point(self.X, self.Y),
-                        Point(X, Y))
+            line = Line(Point(self.X, self.Y), Point(X, Y))
             self.objects.append(line)
             line.draw(self.win)
         if X > 500:
@@ -1147,7 +1120,6 @@ def calc_expr(proc, expr):
                     operator = operators.pop()
                 except:
                     return expr
-                    # u slucaju da se moze kasnije spojiti
                 if operator == "(":
                     break
                 operands.append(perform_operation(operands, operator))
@@ -1196,7 +1168,6 @@ def parse_str(item):
 def parse(proc, item):
     if isinstance(item, list):
         return item
-    #    return [parse(proc, i) for i in item]
     elif is_int(item):
         return int(item)
     elif is_float(item):
@@ -1206,7 +1177,6 @@ def parse(proc, item):
             if is_operator(item[ind]):
                 ind -= 1
                 break
-        # var_name = item[1:ind + 1]
         var_name = item[1:]
         if proc:
             if var_name in proc.vars:
