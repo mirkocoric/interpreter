@@ -21,7 +21,7 @@ Command = namedtuple('Command', 'name args')
 Procedure = namedtuple('Procedure', 'body args vars')
 
 TEST_VAR = ":TEST"
-logging.basicConfig(filename='example.log', level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
 
 
 class LogoInterpreter(object):
