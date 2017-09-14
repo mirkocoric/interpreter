@@ -71,6 +71,8 @@ class TestInterpreter():
         self.check("2 3 4", result)
         result = self.send('REPEAT 3 [PR 2 PR 3]')
         self.check([2, 3, 2, 3, 2, 3], result)
+        result = self.send("BLA")
+        self.check("I DON'T KNOW HOW TO BLA", result)
 
     def stripname_test(self):
         result = self.send('LOAD "TEST4')

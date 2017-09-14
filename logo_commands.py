@@ -48,13 +48,12 @@ class LogoInterpreter(object):
         if self.outstream:
             if not self.output:
                 return None
+            elif len(self.output) > 1:
+                ret = self.output
+                self.output = []
             else:
-                if len(self.output) > 1:
-                    ret = self.output
-                    self.output = []
-                else:
-                    ret = self.output.pop()
-                return ret
+                ret = self.output.pop()
+            return ret
         else:
             for line in self.output:
                 print (line)
@@ -74,10 +73,10 @@ class LogoInterpreter(object):
         if len(par_line) == 1:
             self.output.append("NOT ENOUGH INPUTS TO TO")
             return
-        elif getattr(self, str(par_line[1]), None):
+        if getattr(self, str(par_line[1]), None):
             self.output.append("%s IS A PRIMITIVE" % par_line[1])
             return
-        elif str(par_line[1]) in WS.proc:
+        if str(par_line[1]) in WS.proc:
             self.output.append("%s IS ALREADY DEFINED" % par_line[1])
             return
         for ind in xrange(2, len(par_line)):
@@ -95,8 +94,7 @@ class LogoInterpreter(object):
                 WS.proc[par_line[1]] = Procedure(body, par_line[2:], {})
                 self.output.append("%s DEFINED" % par_line[1])
                 return
-            else:
-                body.append(user_input)
+            body.append(user_input)
 
     def exec_proc(self, proc):
         for line in proc.body:
@@ -165,7 +163,7 @@ class LogoInterpreter(object):
             func = getattr(self, name, None)
             min_args, opt_args = n_args((getargspec(func)))
             return min_args + opt_args
-        elif name in WS.proc:
+        if name in WS.proc:
             return len(WS.proc[name].args)
 
     def send_execute(self, proc, line):
@@ -186,8 +184,7 @@ class LogoInterpreter(object):
         logging.debug(parsed_line)
         arg_stack = []
         for parsed_item in reversed(parsed_line):
-            if (isinstance(parsed_item, list) and parsed_item and
-                    parsed_item[0] == "EXECUTE"):
+            if is_exec(parsed_item):
                 try:
                     result_gen = self.send_execute(proc, parsed_item[1:])
                     result_gen.next()
@@ -197,45 +194,29 @@ class LogoInterpreter(object):
                 except ExecutionEnd as exec_end:
                     result = exec_end.message
                 arg_stack.append(result)
-            elif str(parsed_item).startswith("\""):
+                continue
+            if str(parsed_item).startswith("\""):
                 arg_stack.append(parsed_item[1:])
-            elif not isinstance(parsed_item, str):
+                continue
+            if not isinstance(parsed_item, str):
                 arg_stack.append(parsed_item)
-            elif is_operator(parsed_item):
+                continue
+            if is_operator(parsed_item):
                 arg_stack.append(parsed_item)
-            elif parsed_item == "READLIST" or parsed_item == "READWORD":
+                continue
+            if parsed_item == "READLIST" or parsed_item == "READWORD":
                 arg = yield
                 if parsed_item == "READLIST":
                     arg_stack.append(arg.split())
                 else:
                     arg_stack.append(arg.split()[0])
-            elif getattr(self, str(parsed_item), None):
+                continue
+            if getattr(self, str(parsed_item), None):
                 func = getattr(self, parsed_item, None)
-                args = []
                 min_args, opt_args = n_args((getargspec(func)))
                 func_ret = parsed_item not in ["MAKE", "PR", "IF"]
-                try:
-                    while(len(args) < min_args):
-                        arg = arg_stack.pop()
-                        if is_operator(arg):
-                            arg_stack.append(arg)
-                            arg = args.pop()
-                            arg_stack, args = check_operator(proc, arg_stack,
-                                                             arg, args,
-                                                             func_ret)
-                        elif len(args) == min_args - 1:
-                            arg_stack, args = check_operator(proc, arg_stack,
-                                                             arg, args,
-                                                             func_ret)
-                        else:
-                            args.append(arg)
-                except IndexError:
-                    raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
-                try:
-                    for _ in xrange(opt_args):
-                        args.append(arg_stack.pop())
-                except IndexError:
-                    pass
+                args = check_args(proc, arg_stack, min_args, opt_args,
+                                  func_ret)
                 if parsed_item in ["IF", "REPEAT"]:
                     if_gen = func(proc, *args)
                     try:
@@ -247,34 +228,21 @@ class LogoInterpreter(object):
                         result = exec_end.message
                     except StopIteration:
                         raise ExecutionEnd()
-                else:
-                    result = func(proc, *args)
+                result = func(proc, *args)
                 if (str(parsed_item) == "OUTPUT" or
-                    str(parsed_item) == "STOP"):
+                        str(parsed_item) == "STOP"):
                     raise InterruptProc(result)
-                elif result is not None:
+                if result is not None:
                     arg_stack.append(result)
-            elif parsed_item in WS.proc:
+                continue
+            if parsed_item in WS.proc:
                 proc_cpy = WS.proc[parsed_item]
                 new_proc = Procedure(proc_cpy.body, proc_cpy.args, {})
                 args = []
-                try:
-                    while(len(args) < len(new_proc.args)):
-                        arg = arg_stack.pop()
-                        if is_operator(arg):
-                            arg_stack.append(arg)
-                            arg = args.pop()
-                            arg_stack, args = check_operator(proc, arg_stack,
-                                                             arg, args, True)
-                        elif len(args) == len(new_proc.args) - 1:
-                            arg_stack, args = check_operator(proc, arg_stack,
-                                                             arg, args, True)
-                        else:
-                            args.append(arg)
-                    for arg in reversed(new_proc.args):
-                        new_proc.vars[arg] = args.pop()
-                except IndexError:
-                    raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
+                min_args = len(new_proc.args)
+                args = check_args(proc, arg_stack, min_args, 0, True)
+                for arg in reversed(new_proc.args):
+                    new_proc.vars[arg] = args.pop()
                 proc_gen = self.exec_proc(new_proc)
                 try:
                     proc_gen.next()
@@ -289,11 +257,16 @@ class LogoInterpreter(object):
                     pass
                 elif result is not None:
                     arg_stack.append(result)
-            else:
-                print_undefined(parsed_item)
+                continue
+            print_undefined(parsed_item)
         if arg_stack:
             raise ExecutionEnd(calc_expr(proc, arg_stack))
         raise ExecutionEnd()
+
+    def create_gen(self):
+        ev_gen = self.execute()
+        ev_gen.next()
+        return ev_gen
 
     def parse_line(self, proc, line):
         """Returns parsed line"""
@@ -320,7 +293,7 @@ class LogoInterpreter(object):
 
     def LOCAL(self, proc, var):
         if proc:
-            proc.vars[var]=None
+            proc.vars[var] = None
         else:
             raise ParseError("CAN ONLY DO THAT IN A PROCEDURE")
 
@@ -505,8 +478,7 @@ class LogoInterpreter(object):
             print_argument_error("PRODUCT", arg2)
         elif is_int(arg1) and is_int(arg2):
             return int(arg1) * int(arg2)
-        else:
-            return float(arg1) * float(arg2)
+        return float(arg1) * float(arg2)
 
     def SUM(self, proc, arg1, arg2):
         if not is_float(arg1):
@@ -515,8 +487,7 @@ class LogoInterpreter(object):
             print_argument_error("SUM", arg2)
         elif is_int(arg1) and is_int(arg2):
             return int(arg1) + int(arg2)
-        else:
-            return float(arg1) + float(arg2)
+        return float(arg1) + float(arg2)
 
     def QUOTIENT(self, proc, arg1, arg2):
         if not is_float(arg1):
@@ -527,48 +498,41 @@ class LogoInterpreter(object):
             if int(arg2) == 0:
                 raise ParseError("CAN'T DIVIDE BY ZERO")
             return int(arg1) / int(arg2)
-        else:
-            return float(arg1) / float(arg2)
+        return float(arg1) / float(arg2)
 
     def ARCTAN(self, proc, arg1):
         if not is_float(arg1):
             print_argument_error("ARCTAN", arg1)
-        else:
-            return math.atan(float(arg1)) * 180 / math.pi
+        return math.atan(float(arg1)) * 180 / math.pi
 
     def COS(self, proc, arg1):
         if not is_float(arg1):
             print_argument_error("COS", arg1)
-        else:
-            return math.cos(float(arg1) * math.pi / 180)
+        return math.cos(float(arg1) * math.pi / 180)
 
     def SIN(self, proc, arg1):
         if not is_float(arg1):
             print_argument_error("SIN", arg1)
-        else:
-            return math.sin(float(arg1) * math.pi / 180)
+        return math.sin(float(arg1) * math.pi / 180)
 
     def SQRT(self, proc, arg1):
         if not is_float(arg1):
             print_argument_error("SQRT", arg1)
         elif float(arg1) < 0:
             print_argument_error("SQRT", arg1)
-        else:
-            return math.sqrt(float(arg1))
+        return math.sqrt(float(arg1))
 
     def REMAINDER(self, proc, arg1, arg2):
         if not is_int(arg1):
             print_argument_error("REMAINDER", arg1)
         elif not is_int(arg2):
             print_argument_error("REMAINDER", arg2)
-        else:
-            return int(arg1) % int(arg2)
+        return int(arg1) % int(arg2)
 
     def RANDOM(self, proc, arg1):
         if not is_int(arg1):
             print_argument_error("RANDOM", arg1)
-        else:
-            return randint(0, int(arg1) - 1)
+        return randint(0, int(arg1) - 1)
 
     def LIST(self, proc, arg1, arg2=None):
         var = [arg1]
@@ -598,8 +562,7 @@ class LogoInterpreter(object):
             print_argument_error("WORD", arg2)
         elif arg2:
             return str(arg1) + str(arg2)
-        else:
-            return str(arg1)
+        return str(arg1)
 
     def LPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
@@ -657,8 +620,7 @@ class LogoInterpreter(object):
             print_argument_error("ITEM", item)
         elif num > len(lst):
             raise ParseError("TOO FEW ITEMS IN %s" % lst)
-        else:
-            return lst[num - 1]
+        return lst[num - 1]
 
     def IF(self, proc, pred, arg1, arg2=None):
         pred = check_pred(pred)
@@ -902,6 +864,48 @@ def print_list(lst):
         else:
             ret += str(lst[num])
     return ret
+
+
+def is_exec(parsed_item):
+    return (isinstance(parsed_item, list) and parsed_item and
+            parsed_item[0] == "EXECUTE")
+
+
+def check_args(proc, arg_stack, min_args, opt_args, func_ret):
+
+    try:
+        args = check_req_args(proc, arg_stack, min_args, func_ret)
+    except IndexError:
+        raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
+    try:
+        args = check_opt_args(arg_stack, opt_args, args)
+    except IndexError:
+        pass
+    return args
+
+
+def check_req_args(proc, arg_stack, min_args, func_ret):
+    args = []
+    while(len(args) < min_args):
+        arg = arg_stack.pop()
+        if is_operator(arg):
+            arg_stack.append(arg)
+            arg = args.pop()
+            arg_stack, args = check_operator(proc, arg_stack, arg, args,
+                                             func_ret)
+            continue
+        if len(args) == min_args - 1:
+            arg_stack, args = check_operator(proc, arg_stack, arg, args,
+                                             func_ret)
+            continue
+        args.append(arg)
+    return args
+
+
+def check_opt_args(arg_stack, opt_args, args):
+    for _ in xrange(opt_args):
+        args.append(arg_stack.pop())
+    return args
 
 
 def is_int(name):
