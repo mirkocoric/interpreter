@@ -314,7 +314,7 @@ class LogoInterpreter(object):
         self.print_procedure(name, WS.proc[str(name)])
 
     def DEFINEDP(self, proc, name):
-        return True if str(name) in WS.proc else False
+        return str(name) in WS.proc
 
     def READLIST(self, proc):
         AssertionError("UNUTAR READLIST")
@@ -394,13 +394,13 @@ class LogoInterpreter(object):
         return len(arg1)
 
     def EMPTYP(self, proc, arg1):
-        return False if arg1 else True
+        return not arg1
 
     def EQUALP(self, proc, arg1, arg2):
-        return True if arg1 == arg2 else False
+        return arg1 == arg2
 
     def LISTP(self, proc, arg1):
-        return True if isinstance(arg1, list) else False
+        return isinstance(arg1, list)
 
     def MEMBERP(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
@@ -414,10 +414,10 @@ class LogoInterpreter(object):
         return not self.LISTP(proc, arg1)
 
     def NUMBERP(self, proc, arg1):
-        return True if is_float(arg1) else False
+        return is_float(arg1)
 
     def NAMEP(self, proc, arg1):
-        return True if arg1 in WS.vars else False
+        return arg1 in WS.vars
 
     def THING(self, proc, arg1):
         if arg1 in WS.vars:
@@ -425,10 +425,10 @@ class LogoInterpreter(object):
         raise ParseError("%s HAS NO VALUE" % arg1)
 
     def OR(self, proc, arg1, arg2):
-        return True if arg1 or arg2 else False
+        return arg1 or arg2
 
     def AND(self, proc, arg1, arg2):
-        return True if arg1 and arg2 else False
+        return arg1 and arg2
 
     def PRODUCT(self, proc, arg1, arg2):
         if not is_float(arg1):
@@ -862,14 +862,12 @@ def check_opt_args(arg_stack, opt_args, args):
 
 def is_int(name):
     """Returns True if the string is int"""
+    if isinstance(name, bool):
+        return False
     try:
-        if isinstance(name, bool):
-            return False
         float_name = float(name)
         int_name = int(float_name)
-        if int_name == float_name:
-            return True
-        return False
+        return int_name == float_name
     except:
         return False
 
