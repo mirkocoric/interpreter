@@ -190,9 +190,8 @@ class LogoInterpreter(object):
             if getattr(self, str(parsed_item), None):
                 func = getattr(self, parsed_item, None)
                 min_args, opt_args = n_args((getargspec(func)))
-                func_ret = parsed_item not in ["MAKE", "PR", "IF"]
                 args = check_args(proc, arg_stack, min_args, opt_args,
-                                  func_ret)
+                                  parsed_item)
                 if parsed_item in ["IF", "REPEAT"]:
                     if_gen = func(proc, *args)
                     try:
@@ -800,9 +799,9 @@ def is_exec(parsed_item):
             parsed_item[0] == "EXECUTE")
 
 
-def check_args(proc, arg_stack, min_args, opt_args, func_ret):
+def check_args(proc, arg_stack, min_args, opt_args, parsed_item):
     try:
-        args = check_req_args(proc, arg_stack, min_args, func_ret)
+        args = check_req_args(proc, arg_stack, min_args, parsed_item)
     except IndexError:
         raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
     try:
@@ -812,7 +811,7 @@ def check_args(proc, arg_stack, min_args, opt_args, func_ret):
     return args
 
 
-def check_req_args(proc, arg_stack, min_args, func_ret):
+def check_req_args(proc, arg_stack, min_args, parsed_item):
     args = []
     while(len(args) < min_args):
         arg = arg_stack.pop()
@@ -820,11 +819,11 @@ def check_req_args(proc, arg_stack, min_args, func_ret):
             arg_stack.append(arg)
             arg = args.pop()
             arg_stack, args = check_operator(proc, arg_stack, arg, args,
-                                             func_ret)
+                                             parsed_item)
             continue
         if len(args) == min_args - 1:
             arg_stack, args = check_operator(proc, arg_stack, arg, args,
-                                             func_ret)
+                                             parsed_item)
             continue
         args.append(arg)
     return args
@@ -869,8 +868,9 @@ def check_pred(pred):
     return pred
 
 
-def check_operator(proc, arg_stack, arg, args, func_ret):
+def check_operator(proc, arg_stack, arg, args, parsed_item):
     old_arg_stack = list(arg_stack)
+    func_ret = parsed_item not in ["MAKE", "PR", "IF"]
     try:
         arg_stack = add_arg_check_operator(proc, arg_stack, arg, func_ret)
         args.append(arg_stack.pop())
@@ -1123,35 +1123,19 @@ def perform_operation(operands, operator):
 
 
 def is_operator(ch):
-    operators = "()-+*/=[]<>"
-    for operator in operators:
-        if ch == operator:
-            return True
-    return False
+    return str(ch) in "(-+*[/=]<)>"
 
 
 def is_paranthesis(ch):
-    operators = "()[]"
-    for operator in operators:
-        if ch == operator:
-            return True
-    return False
+    return str(ch) in "]([])"
 
 
 def is_plus_minus(ch):
-    operators = "-+"
-    for operator in operators:
-        if ch == operator:
-            return True
-    return False
+    return str(ch) in "-+"
 
 
 def is_bool_op(ch):
-    operators = "<>="
-    for operator in operators:
-        if ch == operator:
-            return True
-    return False
+    return str(ch) in "<>="
 
 
 def is_em_prod_div(operators):
