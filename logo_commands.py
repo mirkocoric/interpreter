@@ -73,7 +73,7 @@ class LogoInterpreter(object):
         for ind in xrange(2, len(par_line)):
             arg = par_line[ind]
             if not arg.startswith(":"):
-                print_argument_error("TO", arg)
+                raise_argument_error("TO", arg)
             else:
                 par_line[ind] = arg[1:]
         body = []
@@ -95,7 +95,7 @@ class LogoInterpreter(object):
                     result_gen.send(received)
             except ExecutionEnd as exec_end:
                 if exec_end.message:
-                    print_parse_error(exec_end.message)
+                    raise_parse_error(exec_end.message)
                 else:
                     continue
         raise ExecutionEnd()
@@ -110,7 +110,7 @@ class LogoInterpreter(object):
                     result_gen.send(line)
             except ExecutionEnd as exec_end:
                 if exec_end.message:
-                    print_parse_error(exec_end.message)
+                    raise_parse_error(exec_end.message)
                 else:
                     continue
 
@@ -123,7 +123,7 @@ class LogoInterpreter(object):
             if self.is_procedure(item):
                 line, curr_list = self.add_procedure(line, curr_list, item)
             else:
-                print_parse_error(item)
+                raise_parse_error(item)
             lines.append(curr_list)
             curr_list = []
         if curr_list:
@@ -241,7 +241,7 @@ class LogoInterpreter(object):
                 elif result is not None:
                     arg_stack.append(result)
                 continue
-            print_undefined(parsed_item)
+            raise_undefined(parsed_item)
         if arg_stack:
             raise ExecutionEnd(calc_expr(proc, arg_stack))
         raise ExecutionEnd()
@@ -261,9 +261,9 @@ class LogoInterpreter(object):
 
     def LOAD(self, proc, f_name):
         if not isinstance(f_name, str):
-            print_argument_error("LOAD", f_name)
-        elif not os.path.isfile(f_name):
-            print_undefined(f_name)
+            raise_argument_error("LOAD", f_name)
+        if not os.path.isfile(f_name):
+            raise_undefined(f_name)
         with open(f_name, 'r') as f:
             search_file(f)
 
@@ -274,22 +274,19 @@ class LogoInterpreter(object):
             save_in_file(f)
 
     def LOCAL(self, proc, var):
-        if proc:
-            proc.vars[var] = None
-        else:
+        if not proc:
             raise ParseError("CAN ONLY DO THAT IN A PROCEDURE")
+        proc.vars[var] = None
 
     def STOP(self, proc):
-        if proc:
-            return "STOP"
-        else:
+        if not proc:
             raise ParseError("CAN ONLY DO THAT IN A PROCEDURE")
+        return "STOP"
 
     def OUTPUT(self, proc, value):
-        if proc:
-            return value
-        else:
+        if not proc:
             raise ParseError("CAN ONLY DO THAT IN A PROCEDURE")
+        return value
 
     def MAKE(self, proc, name, value):
         if proc:
@@ -312,10 +309,9 @@ class LogoInterpreter(object):
         self.print_variables()
 
     def PO(self, proc, name):
-        if str(name) in WS.proc:
-            self.print_procedure(name, WS.proc[str(name)])
-        else:
+        if str(name) not in WS.proc:
             raise ParseError("%s IS UNDEFINED" % name)
+        self.print_procedure(name, WS.proc[str(name)])
 
     def DEFINEDP(self, proc, name):
         return True if str(name) in WS.proc else False
@@ -327,9 +323,9 @@ class LogoInterpreter(object):
         AssertionError("UNUTAR READWORD")
 
     def INT(self, proc, value):
-        if is_float(value):
-            return int(value)
-        print_argument_error("INT", value)
+        if not is_float(value):
+            raise_argument_error("INT", value)
+        return int(value)
 
     def PR(self, proc, value):
         if isinstance(value, list):
@@ -353,15 +349,15 @@ class LogoInterpreter(object):
         try:
             del WS.proc[name]
         except KeyError:
-            print_undefined(name)
+            raise_undefined(name)
 
     def ERN(self, proc, name):
         if not isinstance(name, str):
-            print_argument_error("ERN", name)
+            raise_argument_error("ERN", name)
         try:
             del WS.vars[name]
         except KeyError:
-            print_undefined(name)
+            raise_undefined(name)
 
     def ERNS(self, proc):
         WS.vars.clear()
@@ -384,21 +380,18 @@ class LogoInterpreter(object):
 
     def ASCII(self, proc, arg1):
         if isinstance(arg1, list):
-            print_argument_error("ASCII", arg1)
-        else:
-            return ord(str(arg1)[0])
+            raise_argument_error("ASCII", arg1)
+        return ord(str(arg1)[0])
 
     def CHAR(self, proc, arg1):
         if not is_float(arg1):
-            print_argument_error("CHAR", arg1)
-        else:
-            return chr(int(arg1))
+            raise_argument_error("CHAR", arg1)
+        return chr(int(arg1))
 
     def COUNT(self, proc, arg1):
         if not isinstance(arg1, list):
-            print_argument_error("COUNT", arg1)
-        else:
-            return len(arg1)
+            raise_argument_error("COUNT", arg1)
+        return len(arg1)
 
     def EMPTYP(self, proc, arg1):
         return False if arg1 else True
@@ -411,7 +404,7 @@ class LogoInterpreter(object):
 
     def MEMBERP(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
-            print_argument_error("MEMBERP", arg2)
+            raise_argument_error("MEMBERP", arg2)
         for item in arg2:
             if arg1 == item:
                 return True
@@ -439,27 +432,27 @@ class LogoInterpreter(object):
 
     def PRODUCT(self, proc, arg1, arg2):
         if not is_float(arg1):
-            print_argument_error("PRODUCT", arg1)
-        elif not is_float(arg2):
-            print_argument_error("PRODUCT", arg2)
-        elif is_int(arg1) and is_int(arg2):
+            raise_argument_error("PRODUCT", arg1)
+        if not is_float(arg2):
+            raise_argument_error("PRODUCT", arg2)
+        if is_int(arg1) and is_int(arg2):
             return int(arg1) * int(arg2)
         return float(arg1) * float(arg2)
 
     def SUM(self, proc, arg1, arg2):
         if not is_float(arg1):
-            print_argument_error("SUM", arg1)
-        elif not is_float(arg2):
-            print_argument_error("SUM", arg2)
-        elif is_int(arg1) and is_int(arg2):
+            raise_argument_error("SUM", arg1)
+        if not is_float(arg2):
+            raise_argument_error("SUM", arg2)
+        if is_int(arg1) and is_int(arg2):
             return int(arg1) + int(arg2)
         return float(arg1) + float(arg2)
 
     def QUOTIENT(self, proc, arg1, arg2):
         if not is_float(arg1):
-            print_argument_error("QUOTIENT", arg1)
+            raise_argument_error("QUOTIENT", arg1)
         elif not is_float(arg2):
-            print_argument_error("QUOTIENT", arg2)
+            raise_argument_error("QUOTIENT", arg2)
         elif is_int(arg1) and is_int(arg2):
             if int(arg2) == 0:
                 raise ParseError("CAN'T DIVIDE BY ZERO")
@@ -468,36 +461,36 @@ class LogoInterpreter(object):
 
     def ARCTAN(self, proc, arg1):
         if not is_float(arg1):
-            print_argument_error("ARCTAN", arg1)
+            raise_argument_error("ARCTAN", arg1)
         return math.atan(float(arg1)) * 180 / math.pi
 
     def COS(self, proc, arg1):
         if not is_float(arg1):
-            print_argument_error("COS", arg1)
+            raise_argument_error("COS", arg1)
         return math.cos(float(arg1) * math.pi / 180)
 
     def SIN(self, proc, arg1):
         if not is_float(arg1):
-            print_argument_error("SIN", arg1)
+            raise_argument_error("SIN", arg1)
         return math.sin(float(arg1) * math.pi / 180)
 
     def SQRT(self, proc, arg1):
         if not is_float(arg1):
-            print_argument_error("SQRT", arg1)
-        elif float(arg1) < 0:
-            print_argument_error("SQRT", arg1)
+            raise_argument_error("SQRT", arg1)
+        if float(arg1) < 0:
+            raise_argument_error("SQRT", arg1)
         return math.sqrt(float(arg1))
 
     def REMAINDER(self, proc, arg1, arg2):
         if not is_int(arg1):
-            print_argument_error("REMAINDER", arg1)
-        elif not is_int(arg2):
-            print_argument_error("REMAINDER", arg2)
+            raise_argument_error("REMAINDER", arg1)
+        if not is_int(arg2):
+            raise_argument_error("REMAINDER", arg2)
         return int(arg1) % int(arg2)
 
     def RANDOM(self, proc, arg1):
         if not is_int(arg1):
-            print_argument_error("RANDOM", arg1)
+            raise_argument_error("RANDOM", arg1)
         return randint(0, int(arg1) - 1)
 
     def LIST(self, proc, arg1, arg2=None):
@@ -520,40 +513,40 @@ class LogoInterpreter(object):
 
     def WORD(self, proc, arg1, arg2=None):
         if isinstance(arg1, list):
-            print_argument_error("WORD", arg1)
-        elif isinstance(arg2, list):
-            print_argument_error("WORD", arg2)
-        elif arg2:
+            raise_argument_error("WORD", arg1)
+        if isinstance(arg2, list):
+            raise_argument_error("WORD", arg2)
+        if arg2:
             return str(arg1) + str(arg2)
         return str(arg1)
 
     def LPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
-            print_argument_error("LPUT", arg2)
+            raise_argument_error("LPUT", arg2)
         return arg2 + [arg1]
 
     def FPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
-            print_argument_error("FPUT", arg2)
+            raise_argument_error("FPUT", arg2)
         return [arg1] + arg2
 
     def FIRST(self, proc, arg1):
         if not arg1:
-            print_argument_error("FIRST", arg1)
+            raise_argument_error("FIRST", arg1)
         if not isinstance(arg1, list):
             return str(arg1)[0]
         return arg1[0]
 
     def LAST(self, proc, arg1):
         if not arg1:
-            print_argument_error("LAST", arg1)
+            raise_argument_error("LAST", arg1)
         if not isinstance(arg1, list):
             return str(arg1)[-1]
         return arg1[-1]
 
     def BUTFIRST(self, proc, arg1):
         if not arg1:
-            print_argument_error("BUTFIRST", arg1)
+            raise_argument_error("BUTFIRST", arg1)
         if not isinstance(arg1, list):
             return str(arg1)[1:]
         return arg1[1:]
@@ -563,7 +556,7 @@ class LogoInterpreter(object):
 
     def BUTLAST(self, proc, arg1):
         if not arg1:
-            print_argument_error("BUTLAST", arg1)
+            raise_argument_error("BUTLAST", arg1)
         if not isinstance(arg1, list):
             return str(arg1)[:-1]
         return arg1[:-1]
@@ -573,23 +566,22 @@ class LogoInterpreter(object):
 
     def ITEM(self, proc, item, lst):
         if not isinstance(lst, list):
-            print_argument_error("ITEM", lst)
+            raise_argument_error("ITEM", lst)
         if not is_int(item):
-            print_argument_error("ITEM", item)
+            raise_argument_error("ITEM", item)
         num = int(item)
         if num < 1:
-            print_argument_error("ITEM", item)
-        elif num > len(lst):
+            raise_argument_error("ITEM", item)
+        if num > len(lst):
             raise ParseError("TOO FEW ITEMS IN %s" % lst)
         return lst[num - 1]
 
     def IF(self, proc, pred, arg1, arg2=None):
-        pred = check_pred(pred)
         if not isinstance(arg1, list):
-            print_argument_error("IF", arg1)
+            raise_argument_error("IF", arg1)
         if not(isinstance(arg1, list) or not arg2):
-            print_argument_error("IF", arg2)
-        if pred:
+            raise_argument_error("IF", arg2)
+        if check_pred(pred):
             if arg1:
                 div_and_exec = self.divide_and_execute(proc, arg1)
                 div_and_exec.next()
@@ -605,9 +597,9 @@ class LogoInterpreter(object):
 
     def REPEAT(self, proc, num, arg1):
         if not isinstance(num, int):
-            print_argument_error("REPEAT", num)
+            raise_argument_error("REPEAT", num)
         if not(isinstance(arg1, list)):
-            print_argument_error("REPEAT", arg1)
+            raise_argument_error("REPEAT", arg1)
         for _ in xrange(num):
             div_and_exec = self.divide_and_execute(proc, arg1)
             try:
@@ -779,7 +771,7 @@ class LogoInterpreter(object):
         self.output.append("")
 
 
-def print_argument_error(func, item):
+def raise_argument_error(func, item):
     err = "%s DOESN'T LIKE " % func
     if isinstance(item, list):
         err += "["
@@ -791,7 +783,7 @@ def print_argument_error(func, item):
     raise ParseError(err)
 
 
-def print_parse_error(item):
+def raise_parse_error(item):
     err = "I DON'T KNOW WHAT TO DO WITH "
     if isinstance(item, list):
         err += "["
@@ -802,7 +794,7 @@ def print_parse_error(item):
     raise ParseError(err)
 
 
-def print_undefined(item):
+def raise_undefined(item):
     err = "I DON'T KNOW HOW TO "
     if isinstance(item, list):
         err += "["
@@ -1139,9 +1131,9 @@ def perform_operation(operands, operator):
     except IndexError:
         return operand2
     if not is_float(operand1):
-        print_argument_error(operator, operand1)
+        raise_argument_error(operator, operand1)
     if not is_float(operand2):
-        print_argument_error(operator, operand2)
+        raise_argument_error(operator, operand2)
     if operator == "+":
         return operand1 + operand2
     if operator == "-":

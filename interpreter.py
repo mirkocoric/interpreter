@@ -1,5 +1,5 @@
 
-from logo_commands import LogoInterpreter, print_parse_error
+from logo_commands import LogoInterpreter, raise_parse_error
 from custom_exceptions import ParseError, ExecutionEnd
 
 CMDS = LogoInterpreter()
@@ -26,7 +26,7 @@ def execute(user_input):
             break
         except ExecutionEnd as exec_end:
             if exec_end.message:
-                print_parse_error(exec_end.message)
+                raise_parse_error(exec_end.message)
             break
         except ParseError as err:
             CMDS.PR([], err.message)
