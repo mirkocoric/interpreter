@@ -6,7 +6,6 @@ import gc
 import math
 import pickle
 import pdb
-import logging
 import time
 from itertools import chain
 from random import randint
@@ -19,9 +18,6 @@ from custom_exceptions import ParseError, ExecutionEnd, InterruptProc
 Var = namedtuple('Var', 'name value')
 Command = namedtuple('Command', 'name args')
 Procedure = namedtuple('Procedure', 'body args vars')
-
-TEST_VAR = ":TEST"
-logging.basicConfig(level=logging.DEBUG)
 
 
 class LogoInterpreter(object):
@@ -59,11 +55,6 @@ class LogoInterpreter(object):
                 print (line)
             self.output = []
 
-    def output_and_read(self):
-        """Prints lines and yields new input"""
-        self.print_out()
-        return self.read_gen.next()
-
     def read(self):
         while(True):
             yield raw_input()
@@ -85,9 +76,7 @@ class LogoInterpreter(object):
                 print_argument_error("TO", arg)
             else:
                 par_line[ind] = arg[1:]
-
         body = []
-
         while(True):
             user_input = self.read_gen.next()
             if user_input == "END":
@@ -112,8 +101,7 @@ class LogoInterpreter(object):
         raise ExecutionEnd()
 
     def divide_and_execute(self, proc, line):
-        lines = self.divide(proc, self.parse_line(proc, line))
-        for line in lines:
+        for line in self.divide(proc, self.parse_line(proc, line)):
             try:
                 result_gen = self.send_execute(proc, line)
                 result_gen.next()
@@ -179,11 +167,8 @@ class LogoInterpreter(object):
         line = yield
         if not line:
             raise ExecutionEnd(None)
-        logging.debug(line)
-        parsed_line = self.parse_line(proc, line)
-        logging.debug(parsed_line)
         arg_stack = []
-        for parsed_item in reversed(parsed_line):
+        for parsed_item in reversed(self.parse_line(proc, line)):
             if is_exec(parsed_item):
                 try:
                     result_gen = self.send_execute(proc, parsed_item[1:])
@@ -238,9 +223,7 @@ class LogoInterpreter(object):
             if parsed_item in WS.proc:
                 proc_cpy = WS.proc[parsed_item]
                 new_proc = Procedure(proc_cpy.body, proc_cpy.args, {})
-                args = []
-                min_args = len(new_proc.args)
-                args = check_args(proc, arg_stack, min_args, 0, True)
+                args = check_args(proc, arg_stack, len(new_proc.args), 0, True)
                 for arg in reversed(new_proc.args):
                     new_proc.vars[arg] = args.pop()
                 proc_gen = self.exec_proc(new_proc)
@@ -272,10 +255,9 @@ class LogoInterpreter(object):
         """Returns parsed line"""
         if not isinstance(line, list):
             line = parse_space_list(line)
-        parsed_operands = [parse_args(proc, arg) for arg in line]
-        parsed_variables = parse(proc, parsed_operands)
-        conn_operands = connect_operators(parsed_variables)
-        return [calc_expr(proc, arg) for arg in conn_operands]
+        parsed_variables = parse(proc, [parse_args(proc, arg) for arg in line])
+        return [calc_expr(proc, arg)
+                for arg in connect_operators(parsed_variables)]
 
     def LOAD(self, proc, f_name):
         if not isinstance(f_name, str):
@@ -336,9 +318,7 @@ class LogoInterpreter(object):
             raise ParseError("%s IS UNDEFINED" % name)
 
     def DEFINEDP(self, proc, name):
-        if str(name) in WS.proc:
-            return True
-        return False
+        return True if str(name) in WS.proc else False
 
     def READLIST(self, proc):
         AssertionError("UNUTAR READLIST")
@@ -421,19 +401,13 @@ class LogoInterpreter(object):
             return len(arg1)
 
     def EMPTYP(self, proc, arg1):
-        if arg1:
-            return False
-        return True
+        return False if arg1 else True
 
     def EQUALP(self, proc, arg1, arg2):
-        if arg1 == arg2:
-            return True
-        return False
+        return True if arg1 == arg2 else False
 
     def LISTP(self, proc, arg1):
-        if isinstance(arg1, list):
-            return True
-        return False
+        return True if isinstance(arg1, list) else False
 
     def MEMBERP(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
@@ -447,14 +421,10 @@ class LogoInterpreter(object):
         return not self.LISTP(proc, arg1)
 
     def NUMBERP(self, proc, arg1):
-        if is_float(arg1):
-            return True
-        return False
+        return True if is_float(arg1) else False
 
     def NAMEP(self, proc, arg1):
-        if arg1 in WS.vars:
-            return True
-        return False
+        return True if arg1 in WS.vars else False
 
     def THING(self, proc, arg1):
         if arg1 in WS.vars:
@@ -462,14 +432,10 @@ class LogoInterpreter(object):
         raise ParseError("%s HAS NO VALUE" % arg1)
 
     def OR(self, proc, arg1, arg2):
-        if arg1 or arg2:
-            return True
-        return False
+        return True if arg1 or arg2 else False
 
     def AND(self, proc, arg1, arg2):
-        if arg1 and arg2:
-            return True
-        return False
+        return True if arg1 and arg2 else False
 
     def PRODUCT(self, proc, arg1, arg2):
         if not is_float(arg1):
@@ -541,10 +507,7 @@ class LogoInterpreter(object):
         return var
 
     def SE(self, proc, arg1, arg2=None):
-        if isinstance(arg1, list):
-            var = list(arg1)
-        else:
-            var = [arg1]
+        var = list(arg1) if isinstance(arg1, list) else [arg1]
         if isinstance(arg2, list):
             for item in arg2:
                 var.append(item)
@@ -567,14 +530,12 @@ class LogoInterpreter(object):
     def LPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
             print_argument_error("LPUT", arg2)
-        arg2 = arg2 + [arg1]
-        return arg2
+        return arg2 + [arg1]
 
     def FPUT(self, proc, arg1, arg2):
         if not isinstance(arg2, list):
             print_argument_error("FPUT", arg2)
-        arg2 = [arg1] + arg2
-        return arg2
+        return [arg1] + arg2
 
     def FIRST(self, proc, arg1):
         if not arg1:
@@ -872,7 +833,6 @@ def is_exec(parsed_item):
 
 
 def check_args(proc, arg_stack, min_args, opt_args, func_ret):
-
     try:
         args = check_req_args(proc, arg_stack, min_args, func_ret)
     except IndexError:
@@ -936,9 +896,9 @@ def is_float(name):
 def check_pred(pred):
     if pred == "TRUE":
         return True
-    elif pred == "FALSE":
+    if pred == "FALSE":
         return False
-    elif not isinstance(pred, bool):
+    if not isinstance(pred, bool):
         raise ParseError("%s IS NOT TRUE OR FALSE" % pred)
     return pred
 
@@ -948,11 +908,10 @@ def check_operator(proc, arg_stack, arg, args, func_ret):
     try:
         arg_stack = add_arg_check_operator(proc, arg_stack, arg, func_ret)
         args.append(arg_stack.pop())
-        return arg_stack, args
     except:
         args.append(arg)
         arg_stack = old_arg_stack
-        return arg_stack, args
+    return arg_stack, args
 
 
 def add_arg_check_operator(proc, arg_stack, new_item, func_ret):
@@ -1060,7 +1019,7 @@ def parse_space_list(line):
 def convert(op):
     if is_int(op):
         return int(op)
-    elif is_float(op):
+    if is_float(op):
         return float(op)
     return op
 
@@ -1084,18 +1043,6 @@ def parse_list(expr):
     if op:
         lst.append(convert(op))
     return lst
-
-
-def check_valid(expr):
-    valid = True
-    if len(expr) == 1:
-        if (is_plus_minus(expr[-1]) or is_em_prod_div(expr[-1])):
-            valid = False
-    elif (is_plus_minus(expr[-1]) or is_em_prod_div(expr[-1]) and
-            is_plus_minus(expr[-2]) or is_em_prod_div(expr[-2])):
-        valid = False
-    if not valid:
-        raise ParseError("NOT ENOUGH INPUTS TO %s" % expr[-1])
 
 
 def calc_expr(proc, expr):
@@ -1151,22 +1098,10 @@ def calc_expr(proc, expr):
         else:
             result = parse(proc, item)
             operands.append(result)
-            if not isinstance(result, str):
-                last_num = True
-            else:
-                last_num = False
+            last_num = True if not isinstance(result, str) else False
     while operators:
         operands.append(perform_operation(operands, operators.pop()))
-    if len(operands) > 1:
-        return operands
-    return operands.pop()
-
-
-def parse_str(item):
-    if str(item).startswith("\""):
-        return str(item)[1:]
-    else:
-        return item
+    return operands if len(operands) > 1 else operands.pop()
 
 
 def parse(proc, item):
@@ -1185,18 +1120,13 @@ def parse(proc, item):
         if proc:
             if var_name in proc.vars:
                 var = proc.vars.get(var_name)
-                if isinstance(var, str):
-                    var = "\"" + var
-                return var
+                return "\"" + var if isinstance(var, str) else var
         if var_name in WS.vars:
             var = WS.vars.get(var_name)
-            if isinstance(var, str):
-                var = "\"" + var
-            return var
+            return "\"" + var if isinstance(var, str) else var
         else:
             raise ParseError("%s HAS NO VALUE" % var_name)
-    else:
-        return item
+    return item
 
 
 def perform_operation(operands, operator):
@@ -1294,11 +1224,8 @@ def parse_args(proc, arg):
 
 def n_args(func_args):
     args = len(func_args.args) - 2
-    opt_args = 0
-    if func_args.defaults:
-        opt_args = len(func_args.defaults)
-    min_args = args - opt_args
-    return min_args, opt_args
+    opt_args = len(func_args.defaults) if func_args.defaults else 0
+    return args - opt_args, opt_args
 
 
 def search_file(f):
