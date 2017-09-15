@@ -35,25 +35,20 @@ class LogoInterpreter(object):
         self.time_drawn = time.time()
         self.output = []
         self.outstream = outstream
-        if not read_gen:
-            self.read_gen = self.read()
-        else:
-            self.read_gen = read_gen
+        self.read_gen = self.read() if not read_gen else read_gen
 
     def print_out(self):
         if self.outstream:
             if not self.output:
                 return None
-            elif len(self.output) > 1:
+            if len(self.output) > 1:
                 ret = self.output
                 self.output = []
-            else:
-                ret = self.output.pop()
-            return ret
-        else:
-            for line in self.output:
-                print (line)
-            self.output = []
+                return ret
+            return self.output.pop()
+        for line in self.output:
+            print (line)
+        self.output = []
 
     def read(self):
         while(True):
@@ -74,8 +69,7 @@ class LogoInterpreter(object):
             arg = par_line[ind]
             if not arg.startswith(":"):
                 raise_argument_error("TO", arg)
-            else:
-                par_line[ind] = arg[1:]
+            par_line[ind] = arg[1:]
         body = []
         while(True):
             user_input = self.read_gen.next()
@@ -96,8 +90,7 @@ class LogoInterpreter(object):
             except ExecutionEnd as exec_end:
                 if exec_end.message:
                     raise_parse_error(exec_end.message)
-                else:
-                    continue
+                continue
         raise ExecutionEnd()
 
     def divide_and_execute(self, proc, line):
@@ -111,19 +104,17 @@ class LogoInterpreter(object):
             except ExecutionEnd as exec_end:
                 if exec_end.message:
                     raise_parse_error(exec_end.message)
-                else:
-                    continue
+                continue
 
     def divide(self, proc, line):
         line = (item for item in line)
         lines = []
         curr_list = []
         for item in line:
-            curr_list.append(item)
-            if self.is_procedure(item):
-                line, curr_list = self.add_procedure(line, curr_list, item)
-            else:
+            if not self.is_procedure(item):
                 raise_parse_error(item)
+            curr_list.append(item)
+            line, curr_list = self.add_procedure(line, curr_list, item)
             lines.append(curr_list)
             curr_list = []
         if curr_list:
@@ -774,44 +765,29 @@ class LogoInterpreter(object):
 def raise_argument_error(func, item):
     err = "%s DOESN'T LIKE " % func
     if isinstance(item, list):
-        err += "["
-        err += print_list(item)
-        err += "]"
-        err += " AS INPUT"
-    else:
-        err += "%s AS INPUT" % item
-    raise ParseError(err)
+        raise ParseError(err + "[" + print_list(item) + "] AS INPUT")
+    raise ParseError(err + "%s AS INPUT" % item)
 
 
 def raise_parse_error(item):
     err = "I DON'T KNOW WHAT TO DO WITH "
     if isinstance(item, list):
-        err += "["
-        err += print_list(item)
-        err += "]"
-    else:
-        err += str(item)
-    raise ParseError(err)
+        raise ParseError(err + "[" + print_list(item) + "]")
+    raise ParseError(err + str(item))
 
 
 def raise_undefined(item):
     err = "I DON'T KNOW HOW TO "
     if isinstance(item, list):
-        err += "["
-        err += print_list(item)
-        err += "]"
-    else:
-        err += str(item)
-    raise ParseError(err)
+        raise ParseError(err + "[" + print_list(item) + "]")
+    raise ParseError(err + str(item))
 
 
 def print_list(lst):
     ret = ""
     for num in xrange(len(lst)):
         if isinstance(lst[num], list):
-            ret += "["
-            ret += print_list(lst[num])
-            ret += "]"
+            ret += "[" + print_list(lst[num]) + "]"
         elif num < len(lst) - 1:
             ret += str(lst[num]) + " "
         else:
@@ -1047,8 +1023,7 @@ def calc_expr(proc, expr):
     if not any(is_operator(item) for item in expr):
         if isinstance(expr, list):
             return expr[0]
-        else:
-            return parse(proc, expr)
+        return parse(proc, expr)
     if any(isinstance(item, list) for item in expr):
         return expr
     chs = (ch for ch in expr)
@@ -1114,8 +1089,7 @@ def parse(proc, item):
         if var_name in WS.vars:
             var = WS.vars.get(var_name)
             return "\"" + var if isinstance(var, str) else var
-        else:
-            raise ParseError("%s HAS NO VALUE" % var_name)
+        raise ParseError("%s HAS NO VALUE" % var_name)
     return item
 
 
