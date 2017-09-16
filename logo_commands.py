@@ -318,15 +318,7 @@ class LogoInterpreter(object):
         return int(value)
 
     def PR(self, proc, value):
-        if isinstance(value, list):
-            self.output.append(print_list(value))
-        elif isinstance(value, bool):
-            if value:
-                self.output.append("TRUE")
-            else:
-                self.output.append("FALSE")
-        else:
-            self.output.append(value)
+        self.output.append(append_output(value))
 
     def RECYCLE(self, proc):
         gc.collect()
@@ -441,9 +433,9 @@ class LogoInterpreter(object):
     def QUOTIENT(self, proc, arg1, arg2):
         if not is_float(arg1):
             raise_argument_error("QUOTIENT", arg1)
-        elif not is_float(arg2):
+        if not is_float(arg2):
             raise_argument_error("QUOTIENT", arg2)
-        elif is_int(arg1) and is_int(arg2):
+        if is_int(arg1) and is_int(arg2):
             if int(arg2) == 0:
                 raise ParseError("CAN'T DIVIDE BY ZERO")
             return int(arg1) / int(arg2)
@@ -491,12 +483,7 @@ class LogoInterpreter(object):
 
     def SE(self, proc, arg1, arg2=None):
         var = list(arg1) if isinstance(arg1, list) else [arg1]
-        if isinstance(arg2, list):
-            for item in arg2:
-                var.append(item)
-        elif arg2:
-            var.append(arg2)
-        return var
+        return append_se(var, arg2)
 
     def SENTENCE(self, proc, arg1, arg2=None):
         return self.SE(proc, arg1, arg2)
@@ -572,18 +559,20 @@ class LogoInterpreter(object):
         if not(isinstance(arg1, list) or not arg2):
             raise_argument_error("IF", arg2)
         if check_pred(pred):
-            if arg1:
-                div_and_exec = self.divide_and_execute(proc, arg1)
-                div_and_exec.next()
-                while(True):
-                    line = yield
-                    div_and_exec.send(line)
-        elif arg2:
-            div_and_exec = self.divide_and_execute(proc, arg2)
+            if not arg1:
+                return
+            div_and_exec = self.divide_and_execute(proc, arg1)
             div_and_exec.next()
             while(True):
                 line = yield
                 div_and_exec.send(line)
+        if not arg2:
+            return
+        div_and_exec = self.divide_and_execute(proc, arg2)
+        div_and_exec.next()
+        while(True):
+            line = yield
+            div_and_exec.send(line)
 
     def REPEAT(self, proc, num, arg1):
         if not isinstance(num, int):
@@ -688,9 +677,10 @@ class LogoInterpreter(object):
         return self.degree
 
     def update(self):
-        if time.time() - self.time_drawn > 1 / 100:
-            update()
-            self.time_drawn = time.time()
+        if not time.time() - self.time_drawn > 1 / 100:
+            return
+        update()
+        self.time_drawn = time.time()
 
     def hideTurtle(self):
         if self.turtle:
@@ -737,11 +727,7 @@ class LogoInterpreter(object):
         self.output.append(ret)
 
     def print_variables(self):
-        for var in WS.vars:
-            if isinstance(var, list):
-                self.print_variable_list(var)
-            else:
-                self.output.append("%s IS %s" % (var, WS.vars[var]))
+        print_local_variables(WS)
 
     def print_local_variables(self, proc):
         for var in proc.vars:
@@ -785,13 +771,34 @@ def raise_undefined(item):
 def print_list(lst):
     ret = ""
     for num in xrange(len(lst)):
-        if isinstance(lst[num], list):
-            ret += "[" + print_list(lst[num]) + "]"
-        elif num < len(lst) - 1:
-            ret += str(lst[num]) + " "
-        else:
-            ret += str(lst[num])
+        ret += append_list(lst, num)
     return ret
+
+
+def append_list(lst, num):
+    if isinstance(lst[num], list):
+        return "[" + print_list(lst[num]) + "]"
+    if num < len(lst) - 1:
+        return str(lst[num]) + " "
+    return str(lst[num])
+
+
+def append_output(value):
+    if isinstance(value, list):
+        return print_list(value)
+    if isinstance(value, bool):
+        if value:
+            return "TRUE"
+        return "FALSE"
+    return value
+
+
+def append_se(var, arg2):
+    if isinstance(arg2, list):
+        return var + arg2
+    if arg2:
+        return arg2
+    return var
 
 
 def is_exec(parsed_item):
@@ -801,28 +808,28 @@ def is_exec(parsed_item):
 
 def check_args(proc, arg_stack, min_args, opt_args, parsed_item):
     try:
-        args = check_req_args(proc, arg_stack, min_args, parsed_item)
+        args=check_req_args(proc, arg_stack, min_args, parsed_item)
     except IndexError:
         raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
     try:
-        args = check_opt_args(arg_stack, opt_args, args)
+        args=check_opt_args(arg_stack, opt_args, args)
     except IndexError:
         pass
     return args
 
 
 def check_req_args(proc, arg_stack, min_args, parsed_item):
-    args = []
+    args=[]
     while(len(args) < min_args):
-        arg = arg_stack.pop()
+        arg=arg_stack.pop()
         if is_operator(arg):
             arg_stack.append(arg)
-            arg = args.pop()
-            arg_stack, args = check_operator(proc, arg_stack, arg, args,
+            arg=args.pop()
+            arg_stack, args=check_operator(proc, arg_stack, arg, args,
                                              parsed_item)
             continue
         if len(args) == min_args - 1:
-            arg_stack, args = check_operator(proc, arg_stack, arg, args,
+            arg_stack, args=check_operator(proc, arg_stack, arg, args,
                                              parsed_item)
             continue
         args.append(arg)
@@ -840,8 +847,8 @@ def is_int(name):
     if isinstance(name, bool):
         return False
     try:
-        float_name = float(name)
-        int_name = int(float_name)
+        float_name=float(name)
+        int_name=int(float_name)
         return int_name == float_name
     except:
         return False
@@ -869,14 +876,14 @@ def check_pred(pred):
 
 
 def check_operator(proc, arg_stack, arg, args, parsed_item):
-    old_arg_stack = list(arg_stack)
-    func_ret = parsed_item not in ["MAKE", "PR", "IF"]
+    old_arg_stack=list(arg_stack)
+    func_ret=parsed_item not in ["MAKE", "PR", "IF"]
     try:
-        arg_stack = add_arg_check_operator(proc, arg_stack, arg, func_ret)
+        arg_stack=add_arg_check_operator(proc, arg_stack, arg, func_ret)
         args.append(arg_stack.pop())
     except:
         args.append(arg)
-        arg_stack = old_arg_stack
+        arg_stack=old_arg_stack
     return arg_stack, args
 
 
@@ -884,19 +891,19 @@ def add_arg_check_operator(proc, arg_stack, new_item, func_ret):
     if not arg_stack:
         arg_stack.append(new_item)
         return arg_stack
-    top = arg_stack.pop()
+    top=arg_stack.pop()
     if (is_operator(top) and not is_paranthesis(top) and
             not isinstance(new_item, list) and not (func_ret and is_bool_op(top))):
-        item = []
+        item=[]
         while(is_operator(top) and not is_paranthesis(top)):
             item.append(new_item)
             item.append(top)
             try:
-                new_item = arg_stack.pop()
+                new_item=arg_stack.pop()
             except:
                 break
             try:
-                top = arg_stack.pop()
+                top=arg_stack.pop()
                 if not is_operator(top):
                     arg_stack.append(top)
                     item.append(new_item)
@@ -917,38 +924,35 @@ def connect_operators(line):
         if (isinstance(item, list) and isinstance(item[0], list) and
                 len(item[0]) > 0 and item[0][0] == "EXECUTE"):
             return line
-    parsed_line = [line[0]]
+    parsed_line=[line[0]]
     for ind in xrange(len(line) - 1):
         if not line[ind + 1] or not line[ind]:
             parsed_line.append(line[ind + 1])
-        elif is_operator(parsed_line[-1][-1]) and is_bool_op(line[ind + 1][0]):
+            continue
+        if is_operator(parsed_line[-1][-1]) and is_bool_op(line[ind + 1][0]):
             raise ParseError("NOT ENOUGH INPUTS TO %s" % line[ind + 1][0])
-        elif (is_operator(parsed_line[-1][-1]) or
-              (is_operator(line[ind + 1][0]) and
-               (not line[ind + 1][0] == "(" and
-                not line[ind + 1][0] == "-"))):
-            func_bf = (is_bool_op(line[ind + 1][0]) and
-                       len(parsed_line) > 1 and
-                       isinstance(parsed_line[-2][0], str) and
-                       not parsed_line[-2][0].startswith("\"") and
-                       not is_operator(parsed_line[-2][0]) and
-                       parsed_line[-2][0] not in
-                       ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
-            func_af = (len(line) > ind + 2 and
-                       isinstance(line[ind + 2][0], str) and
-                       not line[ind + 2][0].startswith("\"") and
-                       not is_operator(line[ind + 2][0]) and
-                       line[ind + 2][0] not in
-                       ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
-            if func_bf or func_af:
-                return line
-            elif not isinstance(line[ind + 1], str):
-                for item in line[ind + 1]:
-                    parsed_line[-1].append(item)
-            else:
-                parsed_line[-1] += line[ind + 1]
-        else:
+        if not (is_operator(parsed_line[-1][-1]) or
+                  (is_operator(line[ind + 1][0]) and
+                  (not line[ind + 1][0] == "(" and
+                   not line[ind + 1][0] == "-"))):
             parsed_line.append(line[ind + 1])
+            continue
+        func_bf = (is_bool_op(line[ind + 1][0]) and
+                   len(parsed_line) > 1 and
+                   isinstance(parsed_line[-2][0], str) and
+                   not parsed_line[-2][0].startswith("\"") and
+                   not is_operator(parsed_line[-2][0]) and
+                   parsed_line[-2][0] not in
+                   ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
+        func_af = (len(line) > ind + 2 and
+                   isinstance(line[ind + 2][0], str) and
+                   not line[ind + 2][0].startswith("\"") and
+                   not is_operator(line[ind + 2][0]) and
+                   line[ind + 2][0] not in
+                   ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
+        if func_bf or func_af:
+            return line
+        parsed_line[-1] += line[ind + 1]
     return parsed_line
 
 
@@ -959,18 +963,16 @@ def parse_space_list(line):
     line = (ch for ch in line)
     operand = ""
     for ch in line:
-        if ch == "[":
-            args.append(parse_list(line))
-        elif ch == "(":
-            lst = ["EXECUTE"]
-            for item in parse_space_list(line):
-                lst.append(item)
-            if len(lst) > 1:
-                args.append(lst)
-        elif ch == ")":
+        if ch == ")":
             if operand:
                 args.append(operand)
             return args
+        if ch == "[":
+            args.append(parse_list(line))
+        elif ch == "(":
+            lst = ["EXECUTE"] + parse_space_list(line)
+            if len(lst) > 1:
+                args.append(lst)
         elif ch == " ":
             if operand:
                 args.append(operand)
@@ -1010,14 +1012,55 @@ def parse_list(expr):
         lst.append(convert(op))
     return lst
 
+def parse_chs(proc, chs, operands, operators):
+    for ch in chs:
+        parse_ch(proc, chs, ch, operands, operators)
+    return operands, operators
+
+def parse_right_par(operands, operators):
+    while True:
+        operator = operators.pop()
+        if operator == "(":
+            break
+        operands.append(perform_operation(operands, operator))
+
+def parse_minus(proc, operands, chs):
+    operands.append(0)
+    try:
+        op = parse(proc, chs.next())
+    except StopIteration:
+        raise ParseError("NOT ENOUGH INPUTS TO -")
+    operands.append(op)
+    operands.append(perform_operation(operands, "-"))
+
+def is_less_prec(ch, operators):
+    return (is_plus_minus(ch) and
+            is_em_prod_div(operators) or
+            (is_bool_op(ch) and not is_bool_op(operators)))
+
+
+def parse_ch(proc, chs, ch, operands, operators):
+    if isinstance(ch, list):
+        operands.append(ch)
+    elif ch == ")":
+        parse_right_par(operands, operators)
+    elif ch == "-":
+        parse_minus(proc, operands, chs)
+    elif is_less_prec(ch, operators):
+        while operators:
+            operands.append(perform_operation(operands, operators.pop()))
+        operators.append(ch)
+    elif is_operator(ch):
+        operators.append(ch)
+    else:
+        result = parse(proc, ch)
+        operands.append(result)
+
 
 def calc_expr(proc, expr):
     """expr is list of operators, it is single item if ther is no operators"""
     operators = []
     operands = []
-    ret_expr = []
-    last_num = False
-    negative = False
     if len(expr) == 1 and is_operator(expr[0]):
         return expr[0]
     if not any(is_operator(item) for item in expr):
@@ -1027,43 +1070,7 @@ def calc_expr(proc, expr):
     if any(isinstance(item, list) for item in expr):
         return expr
     chs = (ch for ch in expr)
-    for item in chs:
-        if isinstance(item, list):
-            operands.append(item)
-        elif item == ")":
-            while True:
-                try:
-                    operator = operators.pop()
-                except:
-                    return expr
-                if operator == "(":
-                    break
-                operands.append(perform_operation(operands, operator))
-            last_num = True
-        elif is_plus_minus(item) and not last_num:
-            if item == "-":
-                operands.append(0)
-                try:
-                    op = parse(proc, chs.next())
-                except StopIteration:
-                    raise ParseError("NOT ENOUGH INPUTS TO -")
-                operands.append(op)
-                operands.append(perform_operation(operands, item))
-                last_num = True
-        elif (is_plus_minus(item) and
-              is_em_prod_div(operators) or
-              (is_bool_op(item) and not is_bool_op(operators))):
-            while operators:
-                operands.append(perform_operation(operands, operators.pop()))
-            operators.append(item)
-            last_num = False
-        elif is_operator(item):
-            operators.append(item)
-            last_num = False
-        else:
-            result = parse(proc, item)
-            operands.append(result)
-            last_num = True if not isinstance(result, str) else False
+    operands, operators = parse_chs(proc, chs, operands, operators)
     while operators:
         operands.append(perform_operation(operands, operators.pop()))
     return operands if len(operands) > 1 else operands.pop()
@@ -1072,11 +1079,11 @@ def calc_expr(proc, expr):
 def parse(proc, item):
     if isinstance(item, list):
         return item
-    elif is_int(item):
+    if is_int(item):
         return int(item)
-    elif is_float(item):
+    if is_float(item):
         return float(item)
-    elif item.startswith(":"):
+    if item.startswith(":"):
         for ind in xrange(len(item)):
             if is_operator(item[ind]):
                 ind -= 1
