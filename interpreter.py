@@ -7,7 +7,7 @@ CMDS = LogoInterpreter()
 
 def start_interpreter():
     """Starts Logo interpreter"""
-    while(True):
+    while True:
         user_input = CMDS.read_gen.next()
         if user_input.startswith("TO "):
             CMDS.create_proc(user_input)
@@ -17,7 +17,7 @@ def start_interpreter():
 
 def execute(user_input):
     ev_gen = CMDS.create_gen()
-    while(True):
+    while True:
         try:
             try:
                 ev_gen.send(user_input)

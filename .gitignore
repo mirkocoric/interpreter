@@ -1,3 +1,6 @@
 *.pyc
 venv/
 .vscode/
+repl.py
+simple_decorator.py
+unit_test_repl.py

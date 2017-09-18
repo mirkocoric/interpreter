@@ -22,9 +22,12 @@ Procedure = namedtuple('Procedure', 'body args vars')
 
 class LogoInterpreter(object):
     def __init__(self, read_gen=None, outstream=False):
-        self.win = GraphWin("Turtle", 500, 500, autoflush=False)
-        self.X = 250
-        self.Y = 250
+        self.winWidth = 500
+        self.winHeight = 500
+        self.win = GraphWin("Turtle", self.winHeight, self.winWidth,
+                            autoflush=False)
+        self.X = self.winHeight / 2
+        self.Y = self.winWidth / 2
         self.degree = 0
         self.objects = []
         self.pen = True
@@ -35,7 +38,7 @@ class LogoInterpreter(object):
         self.time_drawn = time.time()
         self.output = []
         self.outstream = outstream
-        self.read_gen = self.read() if not read_gen else read_gen
+        self.read_gen = read_gen if read_gen else self.read()
 
     def print_out(self):
         if self.outstream:
@@ -51,7 +54,7 @@ class LogoInterpreter(object):
         self.output = []
 
     def read(self):
-        while(True):
+        while True:
             yield raw_input()
 
     def create_proc(self, line):
@@ -71,7 +74,7 @@ class LogoInterpreter(object):
                 raise_argument_error("TO", arg)
             par_line[ind] = arg[1:]
         body = []
-        while(True):
+        while True:
             user_input = self.read_gen.next()
             if user_input == "END":
                 WS.proc[par_line[1]] = Procedure(body, par_line[2:], {})
@@ -84,7 +87,7 @@ class LogoInterpreter(object):
             try:
                 result_gen = self.send_execute(proc, line)
                 result_gen.next()
-                while(True):
+                while True:
                     received = yield
                     result_gen.send(received)
             except ExecutionEnd as exec_end:
@@ -98,7 +101,7 @@ class LogoInterpreter(object):
             try:
                 result_gen = self.send_execute(proc, line)
                 result_gen.next()
-                while(True):
+                while True:
                     line = yield
                     result_gen.send(line)
             except ExecutionEnd as exec_end:
@@ -150,7 +153,7 @@ class LogoInterpreter(object):
         ev_gen = self.execute(proc)
         ev_gen.next()
         ev_gen.send(line)
-        while(True):
+        while True:
             line = yield
             ev_gen.send(line)
 
@@ -164,7 +167,7 @@ class LogoInterpreter(object):
                 try:
                     result_gen = self.send_execute(proc, parsed_item[1:])
                     result_gen.next()
-                    while(True):
+                    while True:
                         line = yield
                         result_gen.send(line)
                 except ExecutionEnd as exec_end:
@@ -180,7 +183,7 @@ class LogoInterpreter(object):
             if is_operator(parsed_item):
                 arg_stack.append(parsed_item)
                 continue
-            if parsed_item == "READLIST" or parsed_item == "READWORD":
+            if parsed_item in ["READLIST", "READWORD"]:
                 arg = yield
                 if parsed_item == "READLIST":
                     arg_stack.append(arg.split())
@@ -196,7 +199,7 @@ class LogoInterpreter(object):
                     if_gen = func(proc, *args)
                     try:
                         if_gen.next()
-                        while(True):
+                        while True:
                             line = yield
                             if_gen.send(line)
                     except ExecutionEnd as exec_end:
@@ -219,7 +222,7 @@ class LogoInterpreter(object):
                 proc_gen = self.exec_proc(new_proc)
                 try:
                     proc_gen.next()
-                    while(True):
+                    while True:
                         line = yield
                         proc_gen.send(line)
                 except InterruptProc as inter:
@@ -232,9 +235,8 @@ class LogoInterpreter(object):
                     arg_stack.append(result)
                 continue
             raise_undefined(parsed_item)
-        if arg_stack:
-            raise ExecutionEnd(calc_expr(proc, arg_stack))
-        raise ExecutionEnd()
+        raise (ExecutionEnd(calc_expr(proc, arg_stack)) if arg_stack else
+               ExecutionEnd())
 
     def create_gen(self):
         ev_gen = self.execute()
@@ -318,7 +320,7 @@ class LogoInterpreter(object):
         return int(value)
 
     def PR(self, proc, value):
-        self.output.append(append_output(value))
+        self.output.append(value_to_print(value))
 
     def RECYCLE(self, proc):
         gc.collect()
@@ -352,7 +354,7 @@ class LogoInterpreter(object):
             return
         try:
             os.remove(name)
-        except:
+        except BaseException:
             raise ParseError("CANNOT ERASE THE FILE")
 
     def CATALOG(self, proc, name):
@@ -483,7 +485,7 @@ class LogoInterpreter(object):
 
     def SE(self, proc, arg1, arg2=None):
         var = list(arg1) if isinstance(arg1, list) else [arg1]
-        return append_se(var, arg2)
+        return connect(var, arg2)
 
     def SENTENCE(self, proc, arg1, arg2=None):
         return self.SE(proc, arg1, arg2)
@@ -563,14 +565,14 @@ class LogoInterpreter(object):
                 return
             div_and_exec = self.divide_and_execute(proc, arg1)
             div_and_exec.next()
-            while(True):
+            while True:
                 line = yield
                 div_and_exec.send(line)
         if not arg2:
             return
         div_and_exec = self.divide_and_execute(proc, arg2)
         div_and_exec.next()
-        while(True):
+        while True:
             line = yield
             div_and_exec.send(line)
 
@@ -583,7 +585,7 @@ class LogoInterpreter(object):
             div_and_exec = self.divide_and_execute(proc, arg1)
             try:
                 div_and_exec.next()
-                while(True):
+                while True:
                     line = yield
                     div_and_exec.send(line)
             except ExecutionEnd as exec_end:
@@ -769,10 +771,13 @@ def raise_undefined(item):
 
 
 def print_list(lst):
-    ret = ""
-    for num in xrange(len(lst)):
-        ret += append_list(lst, num)
-    return ret
+    return ' '.join(list_repr(el) for el in lst)
+
+
+def list_repr(lst):
+    if isinstance(lst, list):
+        return '[' + ' '.join(list_repr(el) for el in lst) + ']'
+    return str(lst)
 
 
 def append_list(lst, num):
@@ -783,7 +788,7 @@ def append_list(lst, num):
     return str(lst[num])
 
 
-def append_output(value):
+def value_to_print(value):
     if isinstance(value, list):
         return print_list(value)
     if isinstance(value, bool):
@@ -793,7 +798,7 @@ def append_output(value):
     return value
 
 
-def append_se(var, arg2):
+def connect(var, arg2):
     if isinstance(arg2, list):
         return var + arg2
     if arg2:
@@ -808,28 +813,28 @@ def is_exec(parsed_item):
 
 def check_args(proc, arg_stack, min_args, opt_args, parsed_item):
     try:
-        args=check_req_args(proc, arg_stack, min_args, parsed_item)
+        args = check_req_args(proc, arg_stack, min_args, parsed_item)
     except IndexError:
         raise ParseError("NOT ENOUGH INPUTS TO %s" % parsed_item)
     try:
-        args=check_opt_args(arg_stack, opt_args, args)
+        args = check_opt_args(arg_stack, opt_args, args)
     except IndexError:
         pass
     return args
 
 
 def check_req_args(proc, arg_stack, min_args, parsed_item):
-    args=[]
+    args = []
     while(len(args) < min_args):
-        arg=arg_stack.pop()
+        arg = arg_stack.pop()
         if is_operator(arg):
             arg_stack.append(arg)
-            arg=args.pop()
-            arg_stack, args=check_operator(proc, arg_stack, arg, args,
+            arg = args.pop()
+            arg_stack, args = check_operator(proc, arg_stack, arg, args,
                                              parsed_item)
             continue
         if len(args) == min_args - 1:
-            arg_stack, args=check_operator(proc, arg_stack, arg, args,
+            arg_stack, args = check_operator(proc, arg_stack, arg, args,
                                              parsed_item)
             continue
         args.append(arg)
@@ -847,10 +852,10 @@ def is_int(name):
     if isinstance(name, bool):
         return False
     try:
-        float_name=float(name)
-        int_name=int(float_name)
+        float_name = float(name)
+        int_name = int(float_name)
         return int_name == float_name
-    except:
+    except BaseException:
         return False
 
 
@@ -861,7 +866,7 @@ def is_float(name):
     try:
         float(name)
         return True
-    except:
+    except BaseException:
         return False
 
 
@@ -876,14 +881,14 @@ def check_pred(pred):
 
 
 def check_operator(proc, arg_stack, arg, args, parsed_item):
-    old_arg_stack=list(arg_stack)
-    func_ret=parsed_item not in ["MAKE", "PR", "IF"]
+    old_arg_stack = list(arg_stack)
+    func_ret = parsed_item not in ["MAKE", "PR", "IF"]
     try:
-        arg_stack=add_arg_check_operator(proc, arg_stack, arg, func_ret)
+        arg_stack = add_arg_check_operator(proc, arg_stack, arg, func_ret)
         args.append(arg_stack.pop())
-    except:
+    except BaseException:
         args.append(arg)
-        arg_stack=old_arg_stack
+        arg_stack = old_arg_stack
     return arg_stack, args
 
 
@@ -891,24 +896,24 @@ def add_arg_check_operator(proc, arg_stack, new_item, func_ret):
     if not arg_stack:
         arg_stack.append(new_item)
         return arg_stack
-    top=arg_stack.pop()
-    if (is_operator(top) and not is_paranthesis(top) and
-            not isinstance(new_item, list) and not (func_ret and is_bool_op(top))):
-        item=[]
+    top = arg_stack.pop()
+    if (is_operator(top) and not is_paranthesis(top) and not isinstance(
+            new_item, list) and not (func_ret and is_bool_op(top))):
+        item = []
         while(is_operator(top) and not is_paranthesis(top)):
             item.append(new_item)
             item.append(top)
             try:
-                new_item=arg_stack.pop()
-            except:
+                new_item = arg_stack.pop()
+            except BaseException:
                 break
             try:
-                top=arg_stack.pop()
+                top = arg_stack.pop()
                 if not is_operator(top):
                     arg_stack.append(top)
                     item.append(new_item)
                     break
-            except:
+            except BaseException:
                 item.append(new_item)
                 break
         arg_stack.append(calc_expr(proc, item))
@@ -924,20 +929,20 @@ def connect_operators(line):
         if (isinstance(item, list) and isinstance(item[0], list) and
                 len(item[0]) > 0 and item[0][0] == "EXECUTE"):
             return line
-    parsed_line=[line[0]]
+    parsed_line = [line[0]]
     for ind in xrange(len(line) - 1):
-        if not line[ind + 1] or not line[ind]:
-            parsed_line.append(line[ind + 1])
+        next_op = line[ind + 1]
+        if not next_op or not line[ind]:
+            parsed_line.append(next_op)
             continue
-        if is_operator(parsed_line[-1][-1]) and is_bool_op(line[ind + 1][0]):
-            raise ParseError("NOT ENOUGH INPUTS TO %s" % line[ind + 1][0])
+        if is_operator(parsed_line[-1][-1]) and is_bool_op(next_op[0]):
+            raise ParseError("NOT ENOUGH INPUTS TO %s" % next_op[0])
         if not (is_operator(parsed_line[-1][-1]) or
-                  (is_operator(line[ind + 1][0]) and
-                  (not line[ind + 1][0] == "(" and
-                   not line[ind + 1][0] == "-"))):
-            parsed_line.append(line[ind + 1])
+                (is_operator(next_op[0]) and
+                 (not next_op[0] in ["(", "-"]))):
+            parsed_line.append(next_op)
             continue
-        func_bf = (is_bool_op(line[ind + 1][0]) and
+        func_bf = (is_bool_op(next_op[0]) and
                    len(parsed_line) > 1 and
                    isinstance(parsed_line[-2][0], str) and
                    not parsed_line[-2][0].startswith("\"") and
@@ -952,7 +957,7 @@ def connect_operators(line):
                    ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
         if func_bf or func_af:
             return line
-        parsed_line[-1] += line[ind + 1]
+        parsed_line[-1] += next_op
     return parsed_line
 
 
@@ -964,9 +969,7 @@ def parse_space_list(line):
     operand = ""
     for ch in line:
         if ch == ")":
-            if operand:
-                args.append(operand)
-            return args
+            return args if not operand else args + [operand]
         if ch == "[":
             args.append(parse_list(line))
         elif ch == "(":
@@ -1012,10 +1015,12 @@ def parse_list(expr):
         lst.append(convert(op))
     return lst
 
+
 def parse_chs(proc, chs, operands, operators):
     for ch in chs:
         parse_ch(proc, chs, ch, operands, operators)
     return operands, operators
+
 
 def parse_right_par(operands, operators):
     while True:
@@ -1023,6 +1028,7 @@ def parse_right_par(operands, operators):
         if operator == "(":
             break
         operands.append(perform_operation(operands, operator))
+
 
 def parse_minus(proc, operands, chs):
     operands.append(0)
@@ -1032,6 +1038,7 @@ def parse_minus(proc, operands, chs):
         raise ParseError("NOT ENOUGH INPUTS TO -")
     operands.append(op)
     operands.append(perform_operation(operands, "-"))
+
 
 def is_less_prec(ch, operators):
     return (is_plus_minus(ch) and
@@ -1084,10 +1091,6 @@ def parse(proc, item):
     if is_float(item):
         return float(item)
     if item.startswith(":"):
-        for ind in xrange(len(item)):
-            if is_operator(item[ind]):
-                ind -= 1
-                break
         var_name = item[1:]
         if proc:
             if var_name in proc.vars:
@@ -1134,7 +1137,7 @@ def is_operator(ch):
 
 
 def is_paranthesis(ch):
-    return str(ch) in "]([])"
+    return str(ch) in "]([)"
 
 
 def is_plus_minus(ch):
@@ -1161,17 +1164,17 @@ def parse_args(proc, arg):
     operand = ""
     l = []
     for ch in arg:
-        if is_operator(ch):
-            if operand:
-                l.append(operand)
-                operand = ""
-            elif is_bool_op(ch) and l:
-                raise ParseError("NOT ENOUGH INPUTS TO %s" % ch)
-            if ch == "-":
-                l.append("+")
-            l.append(ch)
-        else:
+        if not is_operator(ch):
             operand += ch
+            continue
+        if operand:
+            l.append(operand)
+            operand = ""
+        elif is_bool_op(ch) and l:
+            raise ParseError("NOT ENOUGH INPUTS TO %s" % ch)
+        if ch == "-":
+            l.append("+")
+        l.append(ch)
     if operand:
         l.append(operand)
     return [parse(proc, item) for item in l]
@@ -1185,7 +1188,7 @@ def n_args(func_args):
 
 def search_file(f):
     in_procedure = False
-    while(True):
+    while True:
         line = f.readline()
         if not line:
             return

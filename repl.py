@@ -6,7 +6,7 @@ class Interpreter(object):
         self.outStream = outStream
 
     def read(self):
-        while(True):
+        while True:
             yield raw_input()
 
     def output(self):
@@ -18,7 +18,7 @@ class Interpreter(object):
             print self.outLines.pop()
 
     def evaluate(self):
-        while(True):
+        while True:
             line = yield
             if line == "IME":
                 ime = self.start_ime()
@@ -45,7 +45,7 @@ class Interpreter(object):
             read_gen = self.read()
         ev_gen = self.evaluate()
         ev_gen.next()
-        while(True):
+        while True:
             inline = read_gen.next()
             ev_gen.send(inline)
             self.output()
