@@ -780,14 +780,6 @@ def list_repr(lst):
     return str(lst)
 
 
-def append_list(lst, num):
-    if isinstance(lst[num], list):
-        return "[" + print_list(lst[num]) + "]"
-    if num < len(lst) - 1:
-        return str(lst[num]) + " "
-    return str(lst[num])
-
-
 def value_to_print(value):
     if isinstance(value, list):
         return print_list(value)
