@@ -26,7 +26,7 @@ def execute(user_input):
             except StopIteration:
                 break
             except ExecutionEnd as exec_end:
-                if exec_end.message:
+                if exec_end.message is not None:
                     raise_parse_error(exec_end.message)
                 break
         except ParseError as err:

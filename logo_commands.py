@@ -7,7 +7,9 @@ import math
 import pickle
 import pdb
 import time
+import decorator
 from itertools import chain
+from functools import wraps
 from random import randint
 from inspect import getargspec
 from workspace import WS
@@ -18,6 +20,18 @@ from custom_exceptions import ParseError, ExecutionEnd, InterruptProc
 Var = namedtuple('Var', 'name value')
 Command = namedtuple('Command', 'name args')
 Procedure = namedtuple('Procedure', 'body args vars')
+
+
+def validate_args(types):
+    @decorator.decorator
+    def my_decorator(func, *args, **kwargs):
+        def check_args(*args, **kwargs):
+            for arg, typ in zip(args[2:], types):
+                if type(arg) not in typ:
+                    raise_argument_error(func.__name__, arg)
+        check_args(*args, **kwargs)
+        return func(*args, **kwargs)
+    return my_decorator
 
 
 class LogoInterpreter(object):
@@ -251,9 +265,8 @@ class LogoInterpreter(object):
         return [calc_expr(proc, arg)
                 for arg in connect_operators(parsed_variables)]
 
+    @validate_args(types=[[str]])
     def LOAD(self, proc, f_name):
-        if not isinstance(f_name, str):
-            raise_argument_error("LOAD", f_name)
         if not os.path.isfile(f_name):
             raise_undefined(f_name)
         with open(f_name, 'r') as f:
@@ -314,9 +327,8 @@ class LogoInterpreter(object):
     def READWORD(self, proc):
         AssertionError("UNUTAR READWORD")
 
+    @validate_args(types=[[int, float]])
     def INT(self, proc, value):
-        if not is_float(value):
-            raise_argument_error("INT", value)
         return int(value)
 
     def PR(self, proc, value):
@@ -335,9 +347,8 @@ class LogoInterpreter(object):
         except KeyError:
             raise_undefined(name)
 
+    @validate_args(types=[[str]])
     def ERN(self, proc, name):
-        if not isinstance(name, str):
-            raise_argument_error("ERN", name)
         try:
             del WS.vars[name]
         except KeyError:
@@ -362,19 +373,16 @@ class LogoInterpreter(object):
         for f in files:
             output.append(f)
 
+    @validate_args(types=[[list]])
     def ASCII(self, proc, arg1):
-        if isinstance(arg1, list):
-            raise_argument_error("ASCII", arg1)
         return ord(str(arg1)[0])
 
+    @validate_args(types=[[int, float]])
     def CHAR(self, proc, arg1):
-        if not is_float(arg1):
-            raise_argument_error("CHAR", arg1)
         return chr(int(arg1))
 
+    @validate_args(types=[[list]])
     def COUNT(self, proc, arg1):
-        if not isinstance(arg1, list):
-            raise_argument_error("COUNT", arg1)
         return len(arg1)
 
     def EMPTYP(self, proc, arg1):
@@ -386,9 +394,8 @@ class LogoInterpreter(object):
     def LISTP(self, proc, arg1):
         return isinstance(arg1, list)
 
+    @validate_args(types=[[int, float, str, list, bool], [list]])
     def MEMBERP(self, proc, arg1, arg2):
-        if not isinstance(arg2, list):
-            raise_argument_error("MEMBERP", arg2)
         for item in arg2:
             if arg1 == item:
                 return True
@@ -414,67 +421,50 @@ class LogoInterpreter(object):
     def AND(self, proc, arg1, arg2):
         return arg1 and arg2
 
+    @validate_args(types=[[int, float], [int, float]])
     def PRODUCT(self, proc, arg1, arg2):
-        if not is_float(arg1):
-            raise_argument_error("PRODUCT", arg1)
-        if not is_float(arg2):
-            raise_argument_error("PRODUCT", arg2)
         if is_int(arg1) and is_int(arg2):
             return int(arg1) * int(arg2)
         return float(arg1) * float(arg2)
 
+    @validate_args(types=[[int, float], [int, float]])
     def SUM(self, proc, arg1, arg2):
-        if not is_float(arg1):
-            raise_argument_error("SUM", arg1)
-        if not is_float(arg2):
-            raise_argument_error("SUM", arg2)
         if is_int(arg1) and is_int(arg2):
             return int(arg1) + int(arg2)
         return float(arg1) + float(arg2)
 
+    @validate_args(types=[[int, float], [int, float]])
     def QUOTIENT(self, proc, arg1, arg2):
-        if not is_float(arg1):
-            raise_argument_error("QUOTIENT", arg1)
-        if not is_float(arg2):
-            raise_argument_error("QUOTIENT", arg2)
         if is_int(arg1) and is_int(arg2):
             if int(arg2) == 0:
                 raise ParseError("CAN'T DIVIDE BY ZERO")
             return int(arg1) / int(arg2)
         return float(arg1) / float(arg2)
 
+    @validate_args(types=[[int, float]])
     def ARCTAN(self, proc, arg1):
-        if not is_float(arg1):
-            raise_argument_error("ARCTAN", arg1)
         return math.atan(float(arg1)) * 180 / math.pi
 
+    @validate_args(types=[[int, float]])
     def COS(self, proc, arg1):
-        if not is_float(arg1):
-            raise_argument_error("COS", arg1)
         return math.cos(float(arg1) * math.pi / 180)
 
+    @validate_args(types=[[int, float]])
     def SIN(self, proc, arg1):
-        if not is_float(arg1):
-            raise_argument_error("SIN", arg1)
         return math.sin(float(arg1) * math.pi / 180)
 
+    @validate_args(types=[[int, float]])
     def SQRT(self, proc, arg1):
-        if not is_float(arg1):
-            raise_argument_error("SQRT", arg1)
         if float(arg1) < 0:
             raise_argument_error("SQRT", arg1)
         return math.sqrt(float(arg1))
 
+    @validate_args(types=[[int], [int]])
     def REMAINDER(self, proc, arg1, arg2):
-        if not is_int(arg1):
-            raise_argument_error("REMAINDER", arg1)
-        if not is_int(arg2):
-            raise_argument_error("REMAINDER", arg2)
         return int(arg1) % int(arg2)
 
+    @validate_args(types=[[int]])
     def RANDOM(self, proc, arg1):
-        if not is_int(arg1):
-            raise_argument_error("RANDOM", arg1)
         return randint(0, int(arg1) - 1)
 
     def LIST(self, proc, arg1, arg2=None):
@@ -490,23 +480,18 @@ class LogoInterpreter(object):
     def SENTENCE(self, proc, arg1, arg2=None):
         return self.SE(proc, arg1, arg2)
 
+    @validate_args(types=[[int, float, str], [int, float, str]])
     def WORD(self, proc, arg1, arg2=None):
-        if isinstance(arg1, list):
-            raise_argument_error("WORD", arg1)
-        if isinstance(arg2, list):
-            raise_argument_error("WORD", arg2)
         if arg2:
             return str(arg1) + str(arg2)
         return str(arg1)
 
+    @validate_args(types=[[int, float, str, list, bool], [list]])
     def LPUT(self, proc, arg1, arg2):
-        if not isinstance(arg2, list):
-            raise_argument_error("LPUT", arg2)
         return arg2 + [arg1]
 
+    @validate_args(types=[[int, float, str, list, bool], [list]])
     def FPUT(self, proc, arg1, arg2):
-        if not isinstance(arg2, list):
-            raise_argument_error("FPUT", arg2)
         return [arg1] + arg2
 
     def FIRST(self, proc, arg1):
@@ -543,11 +528,8 @@ class LogoInterpreter(object):
     def BL(self, proc, arg1):
         return self.BUTLAST(proc, arg1)
 
+    @validate_args(types=[[int], [list]])
     def ITEM(self, proc, item, lst):
-        if not isinstance(lst, list):
-            raise_argument_error("ITEM", lst)
-        if not is_int(item):
-            raise_argument_error("ITEM", item)
         num = int(item)
         if num < 1:
             raise_argument_error("ITEM", item)
@@ -555,11 +537,8 @@ class LogoInterpreter(object):
             raise ParseError("TOO FEW ITEMS IN %s" % lst)
         return lst[num - 1]
 
-    def IF(self, proc, pred, arg1, arg2=None):
-        if not isinstance(arg1, list):
-            raise_argument_error("IF", arg1)
-        if not(isinstance(arg1, list) or not arg2):
-            raise_argument_error("IF", arg2)
+    @validate_args(types=[[int, float, list, bool, str], [list], [list]])
+    def IF(self, proc, pred, arg1, arg2=[]):
         if check_pred(pred):
             if not arg1:
                 return
@@ -576,11 +555,8 @@ class LogoInterpreter(object):
             line = yield
             div_and_exec.send(line)
 
+    @validate_args(types=[[int], [list]])
     def REPEAT(self, proc, num, arg1):
-        if not isinstance(num, int):
-            raise_argument_error("REPEAT", num)
-        if not(isinstance(arg1, list)):
-            raise_argument_error("REPEAT", arg1)
         for _ in xrange(num):
             div_and_exec = self.divide_and_execute(proc, arg1)
             try:

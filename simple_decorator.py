@@ -1,32 +1,31 @@
-class myDecorator(object):
-    def Multiply(self, a, b):
-        try:
-            self.check_args(self, {a: [int, float], b: [int, float]})
-        except ValueError as ve:
-            return ve.message
-        return a * b
-
-    def Append(self, a, b):
-        try:
-            self.check_args(self, {a: [str], b: [str]})
-        except ValueError as ve:
-            return ve.message
-        return a + b
-
-    def check_args(self, func, args):
-        for arg in args:
-            found = False
-            for arg_type in args[arg]:
-                if type(arg) == arg_type:
-                    found = True
-            if not found:
-                raise ValueError("Wrong argument type")
-        return func
+def validate_args(types):
+    def decorator(func):
+        def check_args(*args, **kwargs):
+            for arg, typ in zip(args[1:], types):
+                if type(arg) not in typ:
+                    raise ValueError("Wrong argument type")
+            return func(*args, **kwargs)
+        return check_args
+    return decorator
 
 
-d = myDecorator()
+class Interpreter(object):
+    @validate_args(types=[[int, float], [int, float]])
+    def multiply(self, arg1, arg2):
+        return arg1 * arg2
 
-print(d.Multiply(2, 3))
-print(d.Multiply(4, "A"))
-print(d.Append(2, 3))
-print(d.Append("A", "B"))
+    @validate_args(types=[[str], [str]])
+    def append(self, arg1, arg2):
+        return arg1 + arg2
+
+it = Interpreter()
+print it.multiply(2, 3)
+try:
+    print it.multiply(4, "A")
+except ValueError as err:
+    print err.message
+print(it.append("A", "B"))
+try:
+    print(it.append(2, 3))
+except ValueError as err:
+    print(err.message)
