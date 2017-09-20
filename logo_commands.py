@@ -11,8 +11,8 @@ from random import randint
 from inspect import getargspec
 from workspace import WS
 from graphics import GraphWin, Line, Point, Polygon
-from custom_exceptions import ParseError, ExecutionEnd, InterruptProc
 import custom_exceptions as ce
+from util import print_list
 
 
 Var = namedtuple('Var', 'name value')
@@ -26,7 +26,7 @@ def validate_args(types):
         def check_args(*args, **kwargs):
             for arg, typ in zip(args[2:], types):
                 if type(arg) not in typ:
-                     raise ce.ArgumentError(func.__name__, arg)
+                    raise ce.ArgumentError(func.__name__, arg)
         check_args(*args, **kwargs)
         return func(*args, **kwargs)
     return my_decorator
@@ -36,7 +36,7 @@ def validate_args(types):
 def check_arg_empty(func, *args, **kwargs):
     def check_args(*args, **kwargs):
         if not args[2]:
-             raise ce.ArgumentError(func.__name__, args[2])
+            raise ce.ArgumentError(func.__name__, args[2])
     check_args(*args, **kwargs)
     return func(*args, **kwargs)
 
@@ -81,7 +81,7 @@ class LogoInterpreter(object):
     def create_proc(self, line):
         par_line = line.split()
         if len(par_line) == 1:
-            raise ce.NotEnoughInputsError()
+            raise ce.NotEnoughInputsError("TO")
         f_name = par_line[1]
         if getattr(self, str(par_line[1]), None):
             self.output.append("%s IS A PRIMITIVE" % f_name)
@@ -92,7 +92,7 @@ class LogoInterpreter(object):
         for ind in xrange(2, len(par_line)):
             arg = par_line[ind]
             if not arg.startswith(":"):
-                 raise ce.ArgumentError("TO", arg)
+                raise ce.ArgumentError("TO", arg)
             par_line[ind] = arg[1:]
         body = []
         while True:
@@ -114,11 +114,11 @@ class LogoInterpreter(object):
                 while True:
                     received = yield
                     result_gen.send(received)
-            except ExecutionEnd as exec_end:
+            except ce.ExecutionEnd as exec_end:
                 if exec_end.message:
                     raise ce.ExtraArgumentError(exec_end.message)
                 continue
-        raise ExecutionEnd()
+        raise ce.ExecutionEnd()
 
     def divide(self, proc, line):
         line = (item for item in line)
@@ -171,7 +171,7 @@ class LogoInterpreter(object):
                     while True:
                         line = yield
                         result_gen.send(line)
-                except ExecutionEnd as exec_end:
+                except ce.ExecutionEnd as exec_end:
                     result = exec_end.message
                 arg_stack.append(result)
                 continue
@@ -202,13 +202,13 @@ class LogoInterpreter(object):
                         while True:
                             line = yield
                             if_gen.send(line)
-                    except ExecutionEnd as exec_end:
+                    except ce.ExecutionEnd as exec_end:
                         result = exec_end.message
                     except StopIteration:
-                        raise ExecutionEnd()
+                        raise ce.ExecutionEnd()
                 result = func(proc, *args)
                 if str(parsed_item) in ["OUTPUT", "STOP"]:
-                    raise InterruptProc(result)
+                    raise ce.InterruptProc(result)
                 if result is not None:
                     arg_stack.append(result)
                 continue
@@ -224,16 +224,16 @@ class LogoInterpreter(object):
                     while True:
                         line = yield
                         proc_gen.send(line)
-                except InterruptProc as inter:
+                except ce.InterruptProc as inter:
                     result = inter.message
-                except ExecutionEnd:
+                except ce.ExecutionEnd:
                     result = None
                 if result not in [None, "STOP"]:
                     arg_stack.append(result)
                 continue
             raise ce.UndefinedError(parsed_item)
-        raise (ExecutionEnd(calc_expr(proc, arg_stack))
-               if arg_stack else ExecutionEnd())
+        raise (ce.ExecutionEnd(calc_expr(proc, arg_stack))
+               if arg_stack else ce.ExecutionEnd())
 
     def create_gen(self):
         ev_gen = self.execute()
@@ -257,23 +257,23 @@ class LogoInterpreter(object):
 
     def SAVE(self, proc, f_name):
         if os.path.exists(f_name):
-            raise ParseError("FILE ALREADY EXISTS")
+            raise ce.ParseError("FILE ALREADY EXISTS")
         with open(f_name, 'w') as f:
             save_in_file(f)
 
     def LOCAL(self, proc, var):
         if not proc:
-            raise CanOnlyInProcError()
+            raise ce.CanOnlyInProcError()
         proc.vars[var] = None
 
     def STOP(self, proc):
         if not proc:
-            raise CanOnlyInProcError()
+            raise ce.CanOnlyInProcError()
         return "STOP"
 
     def OUTPUT(self, proc, value):
         if not proc:
-            raise CanOnlyInProcError()
+            raise ce.CanOnlyInProcError()
         return value
 
     def MAKE(self, proc, name, value):
@@ -298,7 +298,7 @@ class LogoInterpreter(object):
 
     def PO(self, proc, name):
         if str(name) not in WS.proc:
-            raise ParseError("%s IS UNDEFINED" % name)
+            raise ce.ParseError("%s IS UNDEFINED" % name)
         self.print_procedure(name, WS.proc[str(name)])
 
     def DEFINEDP(self, proc, name):
@@ -349,7 +349,7 @@ class LogoInterpreter(object):
         try:
             os.remove(name)
         except OSError:
-            raise ParseError("CANNOT ERASE THE FILE")
+            raise ce.ParseError("CANNOT ERASE THE FILE")
 
     def CATALOG(self, proc):
         self.output += [f for f in os.listdir('.') if os.path.isfile(f)]
@@ -390,7 +390,7 @@ class LogoInterpreter(object):
 
     def THING(self, proc, arg1):
         if arg1 not in WS.vars:
-            raise ParseError("%s HAS NO VALUE" % arg1)
+            raise ce.ParseError("%s HAS NO VALUE" % arg1)
         return WS.vars[arg1]
 
     def OR(self, proc, arg1, arg2):
@@ -428,7 +428,7 @@ class LogoInterpreter(object):
     @validate_args(types=[[int, float]])
     def SQRT(self, proc, arg1):
         if float(arg1) < 0:
-             raise ce.ArgumentError("SQRT", arg1)
+            raise ce.ArgumentError("SQRT", arg1)
         return math.sqrt(arg1)
 
     @validate_args(types=[[int], [int]])
@@ -490,7 +490,7 @@ class LogoInterpreter(object):
     def ITEM(self, proc, item, lst):
         num = int(item)
         if num < 1:
-             raise ce.ArgumentError("ITEM", item)
+            raise ce.ArgumentError("ITEM", item)
         if num > len(lst):
             raise ParseError("TOO FEW ITEMS IN %s" % lst)
         return lst[num - 1]
@@ -506,7 +506,7 @@ class LogoInterpreter(object):
                 while True:
                     line = yield
                     div_and_exec.send(line)
-            except ExecutionEnd:
+            except ce.ExecutionEnd:
                 return
         if not arg2:
             return
@@ -516,7 +516,7 @@ class LogoInterpreter(object):
             while True:
                 line = yield
                 div_and_exec.send(line)
-        except ExecutionEnd:
+        except ce.ExecutionEnd:
             return
 
     @validate_args(types=[[int], [list]])
@@ -528,7 +528,7 @@ class LogoInterpreter(object):
                 while True:
                     line = yield
                     div_and_exec.send(line)
-            except ExecutionEnd as exec_end:
+            except ce.ExecutionEnd as exec_end:
                 if exec_end.message:
                     break
             except StopIteration:
@@ -689,15 +689,6 @@ class LogoInterpreter(object):
 
 def str_or_list(arg):
     return str(arg) if not isinstance(arg, list) else arg
-
-
-def print_list(lst):
-    return ' '.join(list_repr(el) for el in lst)
-
-
-def list_repr(lst):
-    return (str(lst) if not isinstance(lst, list) else
-            '[' + ' '.join(list_repr(el) for el in lst) + ']')
 
 
 def value_to_print(value):
@@ -1030,9 +1021,9 @@ def perform_operation(operands, operator):
     except IndexError:
         return operand2
     if not is_float(operand1):
-         raise ce.ArgumentError(operator, operand1)
+        raise ce.ArgumentError(operator, operand1)
     if not is_float(operand2):
-         raise ce.ArgumentError(operator, operand2)
+        raise ce.ArgumentError(operator, operand2)
     if operator == "+":
         return operand1 + operand2
     if operator == "-":

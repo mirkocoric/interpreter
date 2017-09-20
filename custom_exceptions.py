@@ -1,5 +1,4 @@
-
-#TODO RIJESITI IMPORTE
+from util import print_list
 
 
 def str_error(err, item):
