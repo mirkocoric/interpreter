@@ -1094,13 +1094,7 @@ def is_bool_op(ch):
 
 
 def is_em_prod_div(operators):
-    if not operators:
-        return True
-    prod_div = "*/"
-    for operator in prod_div:
-        if operators[- 1:][0] == operator:
-            return True
-    return False
+    return True if not operators or operators[- 1:][0] in "*/" else False
 
 
 def parse_args(proc, arg):
