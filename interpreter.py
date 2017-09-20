@@ -1,6 +1,8 @@
 
 from logo_commands import LogoInterpreter, raise_parse_error
-from custom_exceptions import ParseError, ExecutionEnd
+from custom_exceptions import ParseError, ExecutionEnd, CanOnlyInProcError
+import custom_exceptions as ce
+
 
 CMDS = LogoInterpreter()
 
@@ -27,9 +29,9 @@ def execute(user_input):
                 break
             except ExecutionEnd as exec_end:
                 if exec_end.message is not None:
-                    raise_parse_error(exec_end.message)
+                    ce.ExtraArgumentError(exec_end.message)
                 break
-        except ParseError as err:
+        except (CanOnlyInProcError, ParseError) as err:
             CMDS.PR([], err.message)
         finally:
             CMDS.print_out()
