@@ -42,12 +42,12 @@ def check_arg_empty(func, *args, **kwargs):
 
 class LogoInterpreter(object):
     def __init__(self, read_gen=None, outstream=False):
-        self.winWidth = 500
-        self.winHeight = 500
-        self.win = GraphWin("Turtle", self.winWidth, self.winHeight,
+        self.win_width = 500
+        self.win_height = 500
+        self.win = GraphWin("Turtle", self.win_width, self.win_height,
                             autoflush=False)
-        self.X = self.winWidth / 2
-        self.Y = self.winHeight / 2
+        self.X = self.win_width / 2
+        self.Y = self.win_height / 2
         self.degree = 0
         self.objects = []
         self.pen = True
@@ -64,11 +64,11 @@ class LogoInterpreter(object):
         if self.outstream:
             if not self.output:
                 return None
-            if len(self.output) > 1:
-                ret = self.output
-                self.output = []
-                return ret
-            return self.output.pop()
+            if not len(self.output) > 1:
+                return self.output.pop()
+            ret = self.output
+            self.output = []
+            return ret
         for line in self.output:
             print (line)
         self.output = []
@@ -103,8 +103,10 @@ class LogoInterpreter(object):
                 return
             body.append(user_input)
 
-    def exec_proc(self, proc):
-        for line in proc.body:
+    def exec_proc(self, proc, line=None):
+        lines = (proc.body if line is None else
+                 self.divide(proc, self.parse_line(proc, line)))
+        for line in lines:
             try:
                 result_gen = self.send_execute(proc, line)
                 result_gen.next()
@@ -116,19 +118,6 @@ class LogoInterpreter(object):
                     raise_parse_error(exec_end.message)
                 continue
         raise ExecutionEnd()
-
-    def divide_and_execute(self, proc, line):
-        for line in self.divide(proc, self.parse_line(proc, line)):
-            try:
-                result_gen = self.send_execute(proc, line)
-                result_gen.next()
-                while True:
-                    line = yield
-                    result_gen.send(line)
-            except ExecutionEnd as exec_end:
-                if exec_end.message:
-                    raise_parse_error(exec_end.message)
-                continue
 
     def divide(self, proc, line):
         line = (item for item in line)
@@ -157,9 +146,8 @@ class LogoInterpreter(object):
         return line, curr_list
 
     def is_procedure(self, name):
-        if not isinstance(name, str):
-            return False
-        return getattr(self, str(name), None) or name in WS.proc
+        return (False if not isinstance(name, str) else
+                getattr(self, str(name), None) or name in WS.proc)
 
     def max_args(self, name):
         if getattr(self, name, None):
@@ -397,10 +385,7 @@ class LogoInterpreter(object):
 
     @validate_args(types=[[int, float, str, list, bool], [list]])
     def MEMBERP(self, proc, arg1, arg2):
-        for item in arg2:
-            if arg1 == item:
-                return True
-        return False
+        return True if arg1 in arg2 else False
 
     def WORDP(self, proc, arg1):
         return not self.LISTP(proc, arg1)
@@ -412,9 +397,9 @@ class LogoInterpreter(object):
         return arg1 in WS.vars
 
     def THING(self, proc, arg1):
-        if arg1 in WS.vars:
-            return WS.vars[arg1]
-        raise ParseError("%s HAS NO VALUE" % arg1)
+        if arg1 not in WS.vars:
+            raise ParseError("%s HAS NO VALUE" % arg1)
+        return WS.vars[arg1]
 
     def OR(self, proc, arg1, arg2):
         return arg1 or arg2
@@ -424,49 +409,43 @@ class LogoInterpreter(object):
 
     @validate_args(types=[[int, float], [int, float]])
     def PRODUCT(self, proc, arg1, arg2):
-        if is_int(arg1) and is_int(arg2):
-            return int(arg1) * int(arg2)
-        return float(arg1) * float(arg2)
+        return arg1 * arg2
 
     @validate_args(types=[[int, float], [int, float]])
     def SUM(self, proc, arg1, arg2):
-        if is_int(arg1) and is_int(arg2):
-            return int(arg1) + int(arg2)
-        return float(arg1) + float(arg2)
+        return arg1 + arg2
 
     @validate_args(types=[[int, float], [int, float]])
     def QUOTIENT(self, proc, arg1, arg2):
-        if is_int(arg1) and is_int(arg2):
-            if int(arg2) == 0:
-                raise ParseError("CAN'T DIVIDE BY ZERO")
-            return int(arg1) / int(arg2)
-        return float(arg1) / float(arg2)
+        if arg2 == 0:
+            raise ParseError("CAN'T DIVIDE BY ZERO")
+        return arg1 / arg2
 
     @validate_args(types=[[int, float]])
     def ARCTAN(self, proc, arg1):
-        return math.atan(float(arg1)) * 180 / math.pi
+        return math.atan(arg1) * 180 / math.pi
 
     @validate_args(types=[[int, float]])
     def COS(self, proc, arg1):
-        return math.cos(float(arg1) * math.pi / 180)
+        return math.cos(arg1 * math.pi / 180)
 
     @validate_args(types=[[int, float]])
     def SIN(self, proc, arg1):
-        return math.sin(float(arg1) * math.pi / 180)
+        return math.sin(arg1 * math.pi / 180)
 
     @validate_args(types=[[int, float]])
     def SQRT(self, proc, arg1):
         if float(arg1) < 0:
             raise_argument_error("SQRT", arg1)
-        return math.sqrt(float(arg1))
+        return math.sqrt(arg1)
 
     @validate_args(types=[[int], [int]])
     def REMAINDER(self, proc, arg1, arg2):
-        return int(arg1) % int(arg2)
+        return arg1 % arg2
 
     @validate_args(types=[[int]])
     def RANDOM(self, proc, arg1):
-        return randint(0, int(arg1) - 1)
+        return randint(0, arg1 - 1)
 
     def LIST(self, proc, arg1, arg2=None):
         var = [arg1]
@@ -483,9 +462,7 @@ class LogoInterpreter(object):
 
     @validate_args(types=[[int, float, str], [int, float, str]])
     def WORD(self, proc, arg1, arg2=None):
-        if arg2:
-            return str(arg1) + str(arg2)
-        return str(arg1)
+        return str(arg1) + str(arg2) if arg2 else str(arg1)
 
     @validate_args(types=[[int, float, str, list, bool], [list]])
     def LPUT(self, proc, arg1, arg2):
@@ -497,30 +474,22 @@ class LogoInterpreter(object):
 
     @check_arg_empty
     def FIRST(self, proc, arg1):
-        if not isinstance(arg1, list):
-            return str(arg1)[0]
-        return arg1[0]
+        return str(arg1)[0] if not isinstance(arg1, list) else arg1[0]
 
     @check_arg_empty
     def LAST(self, proc, arg1):
-        if not isinstance(arg1, list):
-            return str(arg1)[-1]
-        return arg1[-1]
+        return str(arg1)[-1] if not isinstance(arg1, list) else arg1[-1]
 
     @check_arg_empty
     def BUTFIRST(self, proc, arg1):
-        if not isinstance(arg1, list):
-            return str(arg1)[1:]
-        return arg1[1:]
+        return str(arg1)[1:] if not isinstance(arg1, list) else arg1[1:]
 
     def BF(self, proc, arg1):
         return self.BUTFIRST(proc, arg1)
 
     @check_arg_empty
     def BUTLAST(self, proc, arg1):
-        if not isinstance(arg1, list):
-            return str(arg1)[:-1]
-        return arg1[:-1]
+        return str(arg1)[:-1] if not isinstance(arg1, list) else arg1[:-1]
 
     def BL(self, proc, arg1):
         return self.BUTLAST(proc, arg1)
@@ -539,23 +508,29 @@ class LogoInterpreter(object):
         if check_pred(pred):
             if not arg1:
                 return
-            div_and_exec = self.divide_and_execute(proc, arg1)
+            try:
+                div_and_exec = self.exec_proc(proc, arg1)
+                div_and_exec.next()
+                while True:
+                    line = yield
+                    div_and_exec.send(line)
+            except ExecutionEnd:
+                return
+        if not arg2:
+            return
+        try:
+            div_and_exec = self.exec_proc(proc, arg2)
             div_and_exec.next()
             while True:
                 line = yield
                 div_and_exec.send(line)
-        if not arg2:
+        except ExecutionEnd:
             return
-        div_and_exec = self.divide_and_execute(proc, arg2)
-        div_and_exec.next()
-        while True:
-            line = yield
-            div_and_exec.send(line)
 
     @validate_args(types=[[int], [list]])
     def REPEAT(self, proc, num, arg1):
         for _ in xrange(num):
-            div_and_exec = self.divide_and_execute(proc, arg1)
+            div_and_exec = self.exec_proc(proc, arg1)
             try:
                 div_and_exec.next()
                 while True:
@@ -662,23 +637,26 @@ class LogoInterpreter(object):
             self.turtle.undraw()
         self.update()
 
+    def update_coord(self, X, Y):
+        if X > self.win_width:
+            X -= self.win_width
+        if Y > self.win_height:
+            Y -= self.win_height
+        if X < 0:
+            X += self.win_width
+        if Y < 0:
+            Y += self.win_height
+        self.X = X
+        self.Y = Y
+
     def drawTurtle(self, proc, X, Y):
         if self.pen:
             line = Line(Point(self.X, self.Y), Point(X, Y))
             self.objects.append(line)
             line.draw(self.win)
-        if X > self.winWidth:
-            X -= self.winWidth
-        if Y > self.winHeight:
-            Y -= self.winHeight
-        if X < 0:
-            X += self.winWidth
-        if Y < 0:
-            Y += self.winHeight
         dX = X - self.X
         dY = Y - self.Y
-        self.X = X
-        self.Y = Y
+        self.update_coord(X, Y)
         if not self.drawturtle:
             return
         turtle_size = 20
@@ -734,16 +712,14 @@ def raise_argument_error(func, item):
 
 def raise_parse_error(item):
     err = "I DON'T KNOW WHAT TO DO WITH "
-    if isinstance(item, list):
-        raise ParseError(err + "[" + print_list(item) + "]")
-    raise ParseError(err + str(item))
+    raise (ParseError(err + str(item)) if not isinstance(item, list)
+           else ParseError(err + "[" + print_list(item) + "]"))
 
 
 def raise_undefined(item):
     err = "I DON'T KNOW HOW TO "
-    if isinstance(item, list):
-        raise ParseError(err + "[" + print_list(item) + "]")
-    raise ParseError(err + str(item))
+    raise (ParseError(err + str(item)) if not isinstance(item, list)
+           else ParseError(err + "[" + print_list(item) + "]"))
 
 
 def print_list(lst):
@@ -766,9 +742,7 @@ def value_to_print(value):
 def connect(var, arg2):
     if isinstance(arg2, list):
         return var + arg2
-    if arg2:
-        return arg2
-    return var
+    return arg2 if arg2 else var
 
 
 def is_exec(parsed_item):
@@ -890,22 +864,28 @@ def border_operators(ch_bf, ch_af):
                                    (ch_af not in ["(", "-"])))
 
 
+def is_not_spec_func(func):
+    return func not in ["MAKE", "PR", "IF", "OUTPUT", "STOP"]
+
+
 def func_af(line, ind):
-    return (len(line) > ind + 2 and
-            isinstance(line[ind + 2][0], str) and
-            not line[ind + 2][0].startswith("\"") and
-            not is_operator(line[ind + 2][0]) and
-            line[ind + 2][0] not in
-            ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
+    if len(line) <= ind + 2:
+        return False
+    first_ch = line[ind + 2][0]
+    return (isinstance(first_ch, str)
+            and not first_ch.startswith("\"")
+            and not is_operator(first_ch)
+            and is_not_spec_func(first_ch))
 
 
 def func_bf(ch_af, parsed_line):
-    return (is_bool_op(ch_af) and len(parsed_line) > 1 and
-            isinstance(parsed_line[-2][0], str) and
-            not parsed_line[-2][0].startswith("\"") and
-            not is_operator(parsed_line[-2][0]) and
-            parsed_line[-2][0] not in
-            ["MAKE", "PR", "IF", "OUTPUT", "STOP"])
+    if len(parsed_line) <= 1:
+        return False
+    last_ch = parsed_line[-2][0]
+    return (is_bool_op(ch_af) and isinstance(last_ch, str)
+            and not last_ch.startswith("\"")
+            and not is_operator(last_ch)
+            and is_not_spec_func(last_ch))
 
 
 def connect_operators(line):
@@ -1039,9 +1019,7 @@ def calc_expr(proc, expr):
     if len(expr) == 1 and is_operator(first):
         return first
     if not any(is_operator(item) for item in expr):
-        if isinstance(expr, list):
-            return first
-        return parse(proc, expr)
+        return first if isinstance(expr, list) else parse(proc, expr)
     if any(isinstance(item, list) for item in expr):
         return expr
     expr = iter(expr)
@@ -1060,10 +1038,9 @@ def parse(proc, item):
         return float(item)
     if item.startswith(":"):
         var_name = item[1:]
-        if proc:
-            if var_name in proc.vars:
-                var = proc.vars.get(var_name)
-                return "\"" + var if isinstance(var, str) else var
+        if proc and var_name in proc.vars:
+            var = proc.vars.get(var_name)
+            return "\"" + var if isinstance(var, str) else var
         if var_name in WS.vars:
             var = WS.vars.get(var_name)
             return "\"" + var if isinstance(var, str) else var
