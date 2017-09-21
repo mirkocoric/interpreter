@@ -276,10 +276,9 @@ class LogoInterpreter(object):
         return value
 
     def MAKE(self, proc, name, value):
-        if proc:
-            if name in proc.vars:
-                proc.vars[name] = value
-                return
+        if proc and name in proc.vars:
+            proc.vars[name] = value
+            return
         WS.vars[name] = value
 
     def NAME(self, proc, value, name):
@@ -807,10 +806,11 @@ def add_arg_check_operator(proc, arg_stack, new_item, func_ret):
             break
         try:
             top = arg_stack.pop()
-            if not is_operator(top):
-                arg_stack.append(top)
-                item.append(new_item)
-                break
+            if is_operator(top):
+                continue
+            arg_stack.append(top)
+            item.append(new_item)
+            break
         except IndexError:
             item.append(new_item)
             break
@@ -1064,14 +1064,14 @@ def parse_args(proc, arg):
     operand = ""
     l = []
     for ch in arg:
+        if is_bool_op(ch) and l:
+            raise ce.NotEnoughInputsError(ch)
         if not is_operator(ch):
             operand += ch
             continue
         if operand:
             l.append(operand)
             operand = ""
-        elif is_bool_op(ch) and l:
-            raise ce.NotEnoughInputsError(ch)
         if ch == "-":
             l.append("+")
         l.append(ch)
