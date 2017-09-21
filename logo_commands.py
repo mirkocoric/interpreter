@@ -12,7 +12,7 @@ from inspect import getargspec
 from workspace import WS
 from graphics import GraphWin, Line, Point, Polygon
 import custom_exceptions as ce
-from util import print_list
+from util import list_repr
 
 
 Var = namedtuple('Var', 'name value')
@@ -45,6 +45,8 @@ class LogoInterpreter(object):
     def __init__(self, read_gen=None, outstream=False):
         self.win_width = 500
         self.win_height = 500
+        self.turtle_size = 20
+        self.pts_angle = 30
         self.win = GraphWin("Turtle", self.win_width, self.win_height,
                             autoflush=False)
         self.X = self.win_width / 2
@@ -63,10 +65,6 @@ class LogoInterpreter(object):
 
     def print_out(self):
         if self.outstream:
-            if not self.output:
-                return None
-            if len(self.output) == 1:
-                return self.output.pop()
             ret = self.output
             self.output = []
             return ret
@@ -83,24 +81,25 @@ class LogoInterpreter(object):
         if len(par_line) == 1:
             raise ce.NotEnoughInputsError("TO")
         f_name = par_line[1]
-        if getattr(self, str(par_line[1]), None):
+        args = par_line[2:]
+        if getattr(self, str(f_name), None):
             self.output.append("%s IS A PRIMITIVE" % f_name)
             return
         if str(f_name) in WS.proc:
             self.output.append("%s IS ALREADY DEFINED" % f_name)
             return
-        for ind in xrange(2, len(par_line)):
-            arg = par_line[ind]
+        for arg in args:
             if not arg.startswith(":"):
                 raise ce.ArgumentError("TO", arg)
-            par_line[ind] = arg[1:]
+        args = [remove_first_ch(arg) for arg in args]
         body = []
         while True:
             user_input = self.read_gen.next()
-            if user_input is not "END":
-                body.append(user_input)
-            WS.proc[par_line[1]] = Procedure(body, par_line[2:], {})
-            self.output.append("%s DEFINED" % f_name)
+            if user_input == "END":
+                WS.proc[f_name] = Procedure(body, args, {})
+                self.output.append("%s DEFINED" % f_name)
+                return
+            body.append(user_input)
 
     def exec_proc(self, proc, line=None):
         lines = (proc.body if line is None
@@ -120,30 +119,27 @@ class LogoInterpreter(object):
         raise ce.ExecutionEnd()
 
     def divide(self, line):
-        line = (item for item in line)
+        line = iter(line)
         lines = []
         curr_list = []
         for item in line:
             if not self.is_procedure(item):
                 raise ce.ExtraArgumentError(item)
             curr_list.append(item)
-            line, curr_list = self.add_procedure(line, curr_list, item)
+            self.add_procedure(line, curr_list, item)
             lines.append(curr_list)
             curr_list = []
-        if curr_list:
-            lines.append(curr_list)
-        return lines
+        return lines.append(curr_list) if curr_list else lines
 
     def add_procedure(self, line, curr_list, item):
         for _ in xrange(self.max_args(item)):
             try:
                 arg = line.next()
             except StopIteration:
-                return line, curr_list
+                return
             curr_list.append(arg)
             if self.is_procedure(arg):
-                line, curr_list = self.add_procedure(line, curr_list, arg)
-        return line, curr_list
+                self.add_procedure(line, curr_list, arg)
 
     def is_procedure(self, name):
         return getattr(self, str(name), None) or str(name) in WS.proc
@@ -185,9 +181,9 @@ class LogoInterpreter(object):
                 continue
             if parsed_item in ["READLIST", "READWORD"]:
                 read_line = yield
-                splited_line = (read_line.split() if parsed_item == "READLIST"
-                                else read_line.split()[0])
-                arg_stack.append(splited_line)
+                split_line = read_line.split()
+                arg_stack.append(split_line if parsed_item == "READLIST"
+                                 else split_line[0])
                 continue
             if getattr(self, str(parsed_item), None):
                 func = getattr(self, parsed_item, None)
@@ -565,8 +561,7 @@ class LogoInterpreter(object):
 
     def LEFT(self, proc, degree):
         self.degree -= degree
-        if self.degree < -180:
-            self.degree += 360
+        self.repair_degree()
         self.drawTurtle(proc, self.X, self.Y)
 
     def LT(self, proc, distance):
@@ -574,8 +569,7 @@ class LogoInterpreter(object):
 
     def RIGHT(self, proc, degree):
         self.degree += degree
-        if self.degree > 180:
-            self.degree -= 360
+        self.repair_degree()
         self.drawTurtle(proc, self.X, self.Y)
 
     def RT(self, proc, distance):
@@ -594,14 +588,19 @@ class LogoInterpreter(object):
         self.SETPOS(proc, [0, 0])
         self.SETHEADING(proc, 0)
 
+    @validate_args(types=[[list]])
     def SETPOS(self, proc, lst):
-        self.drawTurtle(proc, lst[0] + 250, lst[1] + 250)
+        if len(lst) < 2:
+            raise ce.ArgumentError("SETPOS", lst)
+        x, y = lst
+        self.drawTurtle(proc, x + self.win_width / 2,
+                        y + self.win_height / 2)
 
     def SETX(self, proc, X):
-        self.drawTurtle(proc, X + 250, self.Y)
+        self.drawTurtle(proc, X + self.win_width / 2, self.Y)
 
     def SETY(self, proc, Y):
-        self.drawTurtle(proc, self.X, Y + 250)
+        self.drawTurtle(proc, self.X, Y + self.win_height / 2)
 
     def SETHEADING(self, proc, degree):
         self.degree = degree
@@ -621,6 +620,12 @@ class LogoInterpreter(object):
             return
         self.win.update()
         self.time_drawn = time.time()
+
+    def repair_degree(self):
+        while self.degree < -180:
+            self.degree += 360
+        while self.degree > 180:
+            self.degree -= 360
 
     def hideTurtle(self):
         if self.turtle:
@@ -649,16 +654,12 @@ class LogoInterpreter(object):
         self.update_coord(X, Y)
         if not self.drawturtle:
             return
-        turtle_size = 20
-        pts_angle = 30
-        X1 = self.X - turtle_size * self.SIN(proc, self.degree + pts_angle)
-        Y1 = self.Y + turtle_size * self.COS(proc, self.degree + pts_angle)
-        X2 = self.X - turtle_size * self.SIN(proc, self.degree - pts_angle)
-        Y2 = self.Y + turtle_size * self.COS(proc, self.degree - pts_angle)
+        X1 = self.X - self.turtle_size * self.SIN(proc, self.degree + self.pts_angle)
+        Y1 = self.Y + self.turtle_size * self.COS(proc, self.degree + self.pts_angle)
+        X2 = self.X - self.turtle_size * self.SIN(proc, self.degree - self.pts_angle)
+        Y2 = self.Y + self.turtle_size * self.COS(proc, self.degree - self.pts_angle)
         if self.drawn:
-            self.turtle.move(dX, dY)
-            self.update()
-            return
+            self.turtle.undraw()
         self.turtle = Polygon(
             Point(self.X, self.Y), Point(
                 X1, Y1), Point(X2, Y2))
@@ -667,7 +668,7 @@ class LogoInterpreter(object):
         self.update()
 
     def print_variable_list(self, name, value):
-        self.output.append("%s IS [%s]" % (name, print_list(value)))
+        self.output.append("%s IS [%s]" % (name, list_repr(value)))
 
     def print_variables(self):
         self.print_local_variables(WS)
@@ -689,9 +690,12 @@ def str_or_list(arg):
     return str(arg) if not isinstance(arg, list) else arg
 
 
+def remove_first_ch(item):
+    return item[1:]
+
 def value_to_print(value):
     if isinstance(value, list):
-        return print_list(value)
+        return list_repr(value)
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
     return value
@@ -903,23 +907,27 @@ def convert(op):
     return op
 
 
+def convert_lst(lst):
+    return [convert(item) for item in lst]
+
+
 def parse_list(expr):
     lst = []
-    op = ""
+    new_item = True
     for ch in expr:
-        if op and ch in ["]", " "]:
-            lst.append(convert(op))
         if ch == "]":
-            return lst
+            return convert_lst(lst)
         if ch == "[":
             lst.append(parse_list(expr))
+            new_item = True
         elif ch == " ":
-            op = ""
+            new_item = True
+        elif new_item:
+            lst += ch
+            new_item = False
         else:
-            op += ch
-    if op:
-        lst.append(convert(op))
-    return lst
+            lst[-1] += ch
+    return convert_lst(lst)
 
 
 def parse_chs(proc, expr, operands, operators):

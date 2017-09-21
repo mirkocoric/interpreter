@@ -22,14 +22,14 @@ class TestInterpreter():
         except ParseError as err:
             self.it.PR([], err.message)
         ret = self.it.print_out()
-        return ret
+        return ret.pop() if ret and len(ret) == 1 else ret
 
     def check(self, line, result, line2=None):
         if is_float(line) and is_float(result):
             if math.fabs(line - result) > 0.0001:
                 raise AssertionError("%s != %s" % (line, result))
             else:
-                print("OK")
+                print "OK"
         elif line == result or (line2 is not None and line2 == result):
             print "OK"
         else:
@@ -38,17 +38,18 @@ class TestInterpreter():
     def check_line(self, line, result):
         if not isinstance(line, list):
             raise AssertionError("%s IS NOT LIST" % line)
-        for ind in xrange(len(line)):
-            if not is_float(line[ind]):
-                raise AssertionError("%s IS NOT INTEGER" % line[ind])
-        self.check(line[0], result.getP1().getX())
-        self.check(line[1], result.getP1().getY())
-        self.check(line[2], result.getP2().getX())
-        self.check(line[3], result.getP2().getY())
+        for coord in line:
+            if not is_float(coord):
+                raise AssertionError("%s IS NOT INTEGER" % coord)
+        p1x, p1y, p2x, p2y = line
+        self.check(p1x, result.getP1().getX())
+        self.check(p1y, result.getP1().getY())
+        self.check(p2x, result.getP2().getX())
+        self.check(p2y, result.getP2().getY())
 
     def test_fib(self):
         result = self.send('LOAD "TEST10')
-        self.check(None, result)
+        self.check([], result)
         result = self.send('PR FIBONACCI 1')
         self.check(1, result)
         result = self.send('PR FIBONACCI 2')
@@ -76,13 +77,13 @@ class TestInterpreter():
 
     def stripname_test(self):
         result = self.send('LOAD "TEST4')
-        self.check(None, result)
+        self.check([], result)
         result = self.send("STRIPNAME [] []")
-        self.check(None, result)
+        self.check([], result)
 
     def animal_test(self):
         result = self.send('LOAD "ANIMALAPP')
-        self.check(None, result)
+        self.check([], result)
         result = self.send('ANIMAL')
         self.check(["LET'S PLAY A GAME.", "CHOOSE A RANDOM ANIMAL",
                     "I'M GONNA TRY TO GUESS IT BY",
@@ -116,11 +117,11 @@ class TestInterpreter():
                    ["LOGO MUST BE A GREAT LANGUAGE.",
                     "THAT WAS FUN. WANNA TRY AGAIN?"])
         result = self.send("NO", True)
-        self.check(None, result)
+        self.check([], result)
 
     def koch_test(self):
         result = self.send('LOAD "KOCH')
-        self.check(None, result)
+        self.check([], result)
         result = self.send('KOCH 6')
         self.check(7, len(self.it.objects))
         self.check_line([250, 250, 250, 245], self.it.objects[0])

@@ -1,9 +1,9 @@
-from util import print_list
+from util import list_repr
 
 
 def str_error(err, item):
     return (err + str(item) if not isinstance(item, list)
-            else err + "[" + print_list(item) + "]")
+            else err + "[" + list_repr(item) + "]")
 
 
 class ParseError(Exception):
