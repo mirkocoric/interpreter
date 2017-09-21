@@ -23,24 +23,29 @@ class InterruptProc(Exception):
 
 class CanOnlyInProcError(ParseError):
     def __init__(self):
-        self.message = "CAN ONLY DO THAT IN A PROCEDURE"
+        super(CanOnlyInProcError, self).__init__(
+              "CAN ONLY DO THAT IN A PROCEDURE")
 
 
 class NotEnoughInputsError(ParseError):
     def __init__(self, func):
-        self.message = "NOT ENOUGH INPUTS TO %s" % func
+        super(NotEnoughInputsError, self).__init__(
+              "NOT ENOUGH INPUTS TO %s" % func)
 
 
 class ArgumentError(ParseError):
     def __init__(self, func, item):
-        self.message = str_error("%s DOESN'T LIKE " % func, item) + " AS INPUT"
+        super(ArgumentError, self).__init__(
+              str_error("%s DOESN'T LIKE " % func, item) + " AS INPUT")
 
 
 class ExtraArgumentError(ParseError):
     def __init__(self, item):
-        self.message = str_error("I DON'T KNOW WHAT TO DO WITH ", item)
+        super(ExtraArgumentError, self).__init__(
+              str_error("I DON'T KNOW WHAT TO DO WITH ", item))
 
 
 class UndefinedError(ParseError):
     def __init__(self, item):
-        self.message = str_error("I DON'T KNOW HOW TO ", item)
+        super(UndefinedError, self).__init__(
+              str_error("I DON'T KNOW HOW TO ", item))

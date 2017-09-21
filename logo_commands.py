@@ -97,15 +97,14 @@ class LogoInterpreter(object):
         body = []
         while True:
             user_input = self.read_gen.next()
-            if user_input == "END":
-                WS.proc[par_line[1]] = Procedure(body, par_line[2:], {})
-                self.output.append("%s DEFINED" % f_name)
-                return
-            body.append(user_input)
+            if user_input is not "END":
+                body.append(user_input)
+            WS.proc[par_line[1]] = Procedure(body, par_line[2:], {})
+            self.output.append("%s DEFINED" % f_name)
 
     def exec_proc(self, proc, line=None):
         lines = (proc.body if line is None
-                 else self.divide(proc, self.parse_line(proc, line)))
+                 else self.divide(self.parse_line(proc, line)))
         for line in lines:
             try:
                 result_gen = self.execute(proc)
@@ -120,7 +119,7 @@ class LogoInterpreter(object):
                 continue
         raise ce.ExecutionEnd()
 
-    def divide(self, proc, line):
+    def divide(self, line):
         line = (item for item in line)
         lines = []
         curr_list = []
@@ -160,7 +159,7 @@ class LogoInterpreter(object):
     def execute(self, proc=None):
         line = yield
         if not line:
-            raise ExecutionEnd(None)
+            raise ce.ExecutionEnd(None)
         arg_stack = []
         for parsed_item in reversed(self.parse_line(proc, line)):
             if is_exec(parsed_item):
@@ -410,7 +409,7 @@ class LogoInterpreter(object):
     @validate_args(types=[[int, float], [int, float]])
     def QUOTIENT(self, proc, arg1, arg2):
         if arg2 == 0:
-            raise ParseError("CAN'T DIVIDE BY ZERO")
+            raise ce.ParseError("CAN'T DIVIDE BY ZERO")
         return arg1 / arg2
 
     @validate_args(types=[[int, float]])
@@ -492,7 +491,7 @@ class LogoInterpreter(object):
         if num < 1:
             raise ce.ArgumentError("ITEM", item)
         if num > len(lst):
-            raise ParseError("TOO FEW ITEMS IN %s" % lst)
+            raise ce.ParseError("TOO FEW ITEMS IN %s" % lst)
         return lst[num - 1]
 
     @validate_args(types=[[int, float, list, bool, str], [list], [list]])
@@ -769,7 +768,7 @@ def is_float(name):
 
 def check_pred(pred):
     if not isinstance(pred, bool) and pred not in ["TRUE", "FALSE"]:
-        raise ParseError("%s IS NOT TRUE OR FALSE" % pred)
+        raise ce.ParseError("%s IS NOT TRUE OR FALSE" % pred)
     return pred and pred != "FALSE"
 
 
@@ -912,7 +911,7 @@ def parse_list(expr):
             lst.append(convert(op))
         if ch == "]":
             return lst
-        elif ch == "[":
+        if ch == "[":
             lst.append(parse_list(expr))
         elif ch == " ":
             op = ""
@@ -982,8 +981,7 @@ def calc_expr(proc, expr):
         return first if isinstance(expr, list) else parse(proc, expr)
     if any(isinstance(item, list) for item in expr):
         return expr
-    expr = iter(expr)
-    operands, operators = parse_chs(proc, expr, operands, operators)
+    operands, operators = parse_chs(proc, iter(expr), operands, operators)
     while operators:
         operands.append(perform_operation(operands, operators.pop()))
     return operands if len(operands) > 1 else operands.pop()
@@ -1002,7 +1000,7 @@ def parse(proc, item):
             return str_from_var(var_name, proc)
         if var_name in WS.vars:
             return str_from_var(var_name, WS)
-        raise ParseError("%s HAS NO VALUE" % var_name)
+        raise ce.ParseError("%s HAS NO VALUE" % var_name)
     return item
 
 
@@ -1073,7 +1071,7 @@ def parse_args(proc, arg):
             l.append(operand)
             operand = ""
         elif is_bool_op(ch) and l:
-            raise ce.NotEnoughInputsError()(ch)
+            raise ce.NotEnoughInputsError(ch)
         if ch == "-":
             l.append("+")
         l.append(ch)
