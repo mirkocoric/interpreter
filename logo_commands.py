@@ -874,14 +874,14 @@ def connect_operators(line):
 
 
 def parse_space_list(line):
-    args = []
     if isinstance(line, int) or isinstance(line, float):
         return [line]
     line = iter(line)
-    operand = ""
+    args = []
+    new_item = True
     for ch in line:
         if ch == ")":
-            return args if not operand else args + [operand]
+            return args
         if ch == "[":
             args.append(parse_list(line))
         elif ch == "(":
@@ -889,13 +889,12 @@ def parse_space_list(line):
             if len(lst) > 1:
                 args.append(lst)
         elif ch == " ":
-            if operand:
-                args.append(operand)
-                operand = ""
+            new_item = True
+        elif new_item:
+            args.append(ch)
+            new_item = False
         else:
-            operand += ch
-    if operand:
-        args.append(operand)
+            args[-1] += ch
     return args
 
 
@@ -923,7 +922,7 @@ def parse_list(expr):
         elif ch == " ":
             new_item = True
         elif new_item:
-            lst += ch
+            lst.append(ch)
             new_item = False
         else:
             lst[-1] += ch
@@ -1069,22 +1068,18 @@ def is_em_prod_div(operators):
 def parse_args(proc, arg):
     if not isinstance(arg, str):
         return [arg]
-    operand = ""
     l = []
+    new_item = True
     for ch in arg:
         if is_bool_op(ch) and l:
             raise ce.NotEnoughInputsError(ch)
-        if not is_operator(ch):
-            operand += ch
+        if not is_operator(ch) and not new_item:
+            l[-1] += ch
             continue
-        if operand:
-            l.append(operand)
-            operand = ""
         if ch == "-":
             l.append("+")
+        new_item = is_operator(ch)
         l.append(ch)
-    if operand:
-        l.append(operand)
     return [parse(proc, item) for item in l]
 
 
