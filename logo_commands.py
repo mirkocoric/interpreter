@@ -594,7 +594,7 @@ class LogoInterpreter(object):
 
     @validate_args(types=[[list]])
     def SETPOS(self, proc, lst):
-        if len(lst) < 2:
+        if len(lst) != 2:
             raise ce.ArgumentError("SETPOS", lst)
         x, y = lst
         self.drawTurtle(proc, x + self.win_width / 2,
@@ -631,12 +631,10 @@ class LogoInterpreter(object):
         self.update()
 
     def update_coord(self, X, Y):
-        if X > self.win_width:
-            X -= self.win_width
-        if Y > self.win_height:
-            Y -= self.win_height
+        X %= self.win_width
         if X < 0:
             X += self.win_width
+        Y %= self.win_height
         if Y < 0:
             Y += self.win_height
         self.X = X
@@ -902,15 +900,14 @@ def parse_list(expr):
 def parse_list_ch(ch, expr, new_item, lst):
     if ch == "[":
         lst.append(parse_list(expr))
-        new_item = True
-    elif ch == " ":
-        new_item = True
-    elif new_item:
+        return True
+    if ch == " ":
+        return True
+    if new_item:
         lst.append(ch)
-        new_item = False
-    else:
-        lst[-1] += ch
-    return new_item
+        return False
+    lst[-1] += ch
+    return False
 
 
 def convert(op):
@@ -944,7 +941,7 @@ def parse_minus(proc, operands, expr):
     try:
         op = parse(proc, expr.next())
     except StopIteration:
-        raise ce.NotEnoughInputsError()("-")
+        raise ce.NotEnoughInputsError("-")
     operands.append(op)
     operands.append(perform_operation(operands, "-"))
 
@@ -1025,20 +1022,19 @@ def perform_operation(operands, operator):
         raise ce.ArgumentError(operator, operand1)
     if not is_float(operand2):
         raise ce.ArgumentError(operator, operand2)
-    if operator == "+":
-        return operand1 + operand2
-    if operator == "-":
-        return operand1 - operand2
-    if operator == "*":
-        return operand1 * operand2
-    if operator == "/":
-        return float(operand1) / operand2
-    if operator == "=":
-        return operand1 == operand2
-    if operator == "<":
-        return operand1 < operand2
-    if operator == ">":
-        return operand1 > operand2
+    return func_from_op(operator)(operand1, operand2)
+
+
+def func_from_op(op):
+    func = {"+": lambda op1, op2: op1 + op2,
+            "-": lambda op1, op2: op1 - op2,
+            "*": lambda op1, op2: op1 * op2,
+            "/": lambda op1, op2: op1 / op2,
+            "=": lambda op1, op2: op1 == op2,
+            "<": lambda op1, op2: op1 < op2,
+            ">": lambda op1, op2: op1 > op2
+            }
+    return func[op]
 
 
 def is_operator(ch):
@@ -1058,7 +1054,7 @@ def is_bool_op(ch):
 
 
 def is_em_prod_div(operators):
-    return not operators or operators[- 1:][0] in "*/"
+    return not operators or operators[-1:][0] in "*/"
 
 
 def parse_args(proc, arg):
