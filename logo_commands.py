@@ -33,6 +33,15 @@ def validate_args(types):
 
 
 @decorator.decorator
+def validate_in_proc(func, *args, **kwargs):
+    def check_args(*args, **kwargs):
+        if not args[1]:
+            raise ce.CanOnlyInProcError()
+    check_args(*args, **kwargs)
+    return func(*args, **kwargs)
+
+
+@decorator.decorator
 def check_arg_empty(func, *args, **kwargs):
     def check_args(*args, **kwargs):
         if not args[2]:
@@ -256,19 +265,16 @@ class LogoInterpreter(object):
         with open(f_name, 'w') as f:
             save_in_file(f)
 
+    @validate_in_proc
     def LOCAL(self, proc, var):
-        if not proc:
-            raise ce.CanOnlyInProcError()
         proc.vars[var] = None
 
+    @validate_in_proc
     def STOP(self, proc):
-        if not proc:
-            raise ce.CanOnlyInProcError()
         return "STOP"
 
+    @validate_in_proc
     def OUTPUT(self, proc, value):
-        if not proc:
-            raise ce.CanOnlyInProcError()
         return value
 
     def MAKE(self, proc, name, value):
@@ -560,16 +566,14 @@ class LogoInterpreter(object):
         return self.BACK(proc, distance)
 
     def LEFT(self, proc, degree):
-        self.degree -= degree
-        self.repair_degree()
+        self.degree = (self.degree - degree) % 360
         self.drawTurtle(proc, self.X, self.Y)
 
     def LT(self, proc, distance):
         return self.LEFT(proc, distance)
 
     def RIGHT(self, proc, degree):
-        self.degree += degree
-        self.repair_degree()
+        self.degree = (self.degree + degree) % 360
         self.drawTurtle(proc, self.X, self.Y)
 
     def RT(self, proc, distance):
@@ -620,12 +624,6 @@ class LogoInterpreter(object):
             return
         self.win.update()
         self.time_drawn = time.time()
-
-    def repair_degree(self):
-        while self.degree < -180:
-            self.degree += 360
-        while self.degree > 180:
-            self.degree -= 360
 
     def hideTurtle(self):
         if self.turtle:
@@ -726,7 +724,7 @@ def check_args(proc, arg_stack, min_args, opt_args, parsed_item):
 
 def check_req_args(proc, arg_stack, min_args, parsed_item):
     args = []
-    while(len(args) < min_args):
+    while len(args) < min_args:
         arg = arg_stack.pop()
         if is_operator(arg):
             arg_stack.append(arg)
@@ -863,7 +861,7 @@ def connect_operators(line):
             parsed_line.append(next_op)
             continue
         if is_operator(parsed_line[-1][-1]) and is_bool_op(next_op[0]):
-            raise ce.NotEnoughInputsError()(next_op[0])
+            raise ce.NotEnoughInputsError(next_op[0])
         if not border_operators(parsed_line[-1][-1], next_op[0]):
             parsed_line.append(next_op)
             continue
@@ -882,20 +880,37 @@ def parse_space_list(line):
     for ch in line:
         if ch == ")":
             return args
-        if ch == "[":
-            args.append(parse_list(line))
-        elif ch == "(":
+        if ch == "(":
             lst = ["EXECUTE"] + parse_space_list(line)
             if len(lst) > 1:
                 args.append(lst)
-        elif ch == " ":
-            new_item = True
-        elif new_item:
-            args.append(ch)
-            new_item = False
         else:
-            args[-1] += ch
+            new_item = parse_list_ch(ch, line, new_item, args)
     return args
+
+
+def parse_list(expr):
+    lst = []
+    new_item = True
+    for ch in expr:
+        if ch == "]":
+            return convert_lst(lst)
+        new_item = parse_list_ch(ch, expr, new_item, lst)
+    return convert_lst(lst)
+
+
+def parse_list_ch(ch, expr, new_item, lst):
+    if ch == "[":
+        lst.append(parse_list(expr))
+        new_item = True
+    elif ch == " ":
+        new_item = True
+    elif new_item:
+        lst.append(ch)
+        new_item = False
+    else:
+        lst[-1] += ch
+    return new_item
 
 
 def convert(op):
@@ -908,25 +923,6 @@ def convert(op):
 
 def convert_lst(lst):
     return [convert(item) for item in lst]
-
-
-def parse_list(expr):
-    lst = []
-    new_item = True
-    for ch in expr:
-        if ch == "]":
-            return convert_lst(lst)
-        if ch == "[":
-            lst.append(parse_list(expr))
-            new_item = True
-        elif ch == " ":
-            new_item = True
-        elif new_item:
-            lst.append(ch)
-            new_item = False
-        else:
-            lst[-1] += ch
-    return convert_lst(lst)
 
 
 def parse_chs(proc, expr, operands, operators):
@@ -1020,7 +1016,7 @@ def perform_operation(operands, operator):
     try:
         operand2 = operands.pop()
     except IndexError:
-        raise ce.NotEnoughInputsError()(operator)
+        raise ce.NotEnoughInputsError(operator)
     try:
         operand1 = operands.pop()
     except IndexError:
