@@ -7,3 +7,4 @@ unit_test_repl.py
 inheritance.py
 parse_list_test.py
 .coverage/
+bug_report.py

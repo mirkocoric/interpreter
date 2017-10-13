@@ -650,10 +650,14 @@ class LogoInterpreter(object):
         self.update_coord(X, Y)
         if not self.drawturtle:
             return
-        X1 = self.X - self.turtle_size * self.SIN(proc, self.degree + self.pts_angle)
-        Y1 = self.Y + self.turtle_size * self.COS(proc, self.degree + self.pts_angle)
-        X2 = self.X - self.turtle_size * self.SIN(proc, self.degree - self.pts_angle)
-        Y2 = self.Y + self.turtle_size * self.COS(proc, self.degree - self.pts_angle)
+        X1 = self.X - self.turtle_size * \
+            self.SIN(proc, self.degree + self.pts_angle)
+        Y1 = self.Y + self.turtle_size * \
+            self.COS(proc, self.degree + self.pts_angle)
+        X2 = self.X - self.turtle_size * \
+            self.SIN(proc, self.degree - self.pts_angle)
+        Y2 = self.Y + self.turtle_size * \
+            self.COS(proc, self.degree - self.pts_angle)
         if self.drawn:
             self.turtle.undraw()
         self.turtle = Polygon(
@@ -688,6 +692,7 @@ def str_or_list(arg):
 
 def remove_first_ch(item):
     return item[1:]
+
 
 def value_to_print(value):
     if isinstance(value, list):
