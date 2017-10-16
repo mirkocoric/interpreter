@@ -1,3 +1,4 @@
+import re
 from logo_commands import is_int, is_float, str_from_var, is_operator
 from logo_commands import is_bool_op, is_paranthesis, perform_operation
 from workspace import WS
@@ -18,7 +19,7 @@ class Token(object):
     __repr__ = __str__
 
 
-def str_from_op(op):
+def token_name_from_op(op):
     func = {"+": "PLUS",
             "-": "MINUS",
             "*": "PROD",
@@ -34,7 +35,7 @@ def str_from_op(op):
     return func[op]
 
 
-def parse(item, proc=None):
+def tokenize(item, proc=None):
     if is_int(item):
         return Token("INTEGER", int(item))
     if is_float(item):
@@ -43,22 +44,15 @@ def parse(item, proc=None):
     if item.startswith(":"):
         return Token("VAR", item[1:])
     if is_operator(item) or is_paranthesis(item):
-        return Token(str_from_op(item), item)
+        return Token(token_name_from_op(item), item)
     if item in keywords:
         return Token("KEYWORD", item)
     return Token("STRING", item)
 
 
-def parse_args(arg, proc=None):
-    l = []
-    new_item = True
-    for ch in arg:
-        if not (is_operator(ch) or is_paranthesis(ch)) and not new_item:
-            l[-1] += ch
-            continue
-        new_item = is_operator(ch) or is_paranthesis(ch)
-        l.append(ch)
-    return [parse(item, proc) for spaced in l for item in spaced.split()]
+def tokenize_args(arg, proc=None):
+    return [tokenize(item, proc) for spaced in re.split("(\W)", arg)
+            for item in spaced.split()]
 
 
 class Node(object):
@@ -153,22 +147,22 @@ class Interpreter(object):
         if token.datatype == "LPAR":
             return self.expr(tokens)
 
-def parse_args_test():
-    print(parse_args('PR 2 + 4'))
-    print(parse_args('IF "TRUE [PR 3]'))
-    print(parse_args('IF 2 + 3 > 4 [PR 2]'))
-    print(parse_args(' PR (3 +  (4 + 5))'))
-    print(parse_args("BLA"))
+def tokenize_args_test():
+    print(tokenize_args('PR 2 + 4'))
+    print(tokenize_args('IF "TRUE [PR 3]'))
+    print(tokenize_args('IF 2 + 3 > 4 [PR 2]'))
+    print(tokenize_args(' PR (3 +  (4 + 5))'))
+    print(tokenize_args("BLA"))
 
 
 def build_ast_test():
     it = Interpreter()
-    ast1 = it.build_ast(parse_args('PR 2 < 4'))
-    ast2 = it.build_ast(parse_args('PR 2 + 4'))
-    ast3 = it.build_ast(parse_args('PR 2 + 3 > 4'))
-    ast4 = it.build_ast(parse_args('PR 2 < 3 - 4'))
-    ast5 = it.build_ast(parse_args('PR 2 + 3 < 4 + 0.4'))
-    ast6 = it.build_ast(parse_args('PR 2 + 3 * 4'))
+    ast1 = it.build_ast(tokenize_args('PR 2 < 4'))
+    ast2 = it.build_ast(tokenize_args('PR 2 + 4'))
+    ast3 = it.build_ast(tokenize_args('PR 2 + 3 > 4'))
+    ast4 = it.build_ast(tokenize_args('PR 2 < 3 - 4'))
+    ast5 = it.build_ast(tokenize_args('PR 2 + 3 < 4 + 0.4'))
+    ast6 = it.build_ast(tokenize_args('PR 2 + 3 * 4'))
     print(ast1.calc(ast1.root))
     print(ast2.calc(ast2.root))
     print(ast3.calc(ast3.root))
@@ -178,7 +172,7 @@ def build_ast_test():
 
 
 if __name__ == "__main__":
-    parse_args_test()
+    tokenize_args_test()
     build_ast_test()
 
 

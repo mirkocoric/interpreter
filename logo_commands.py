@@ -650,14 +650,14 @@ class LogoInterpreter(object):
         self.update_coord(X, Y)
         if not self.drawturtle:
             return
-        X1 = self.X - self.turtle_size * \
-            self.SIN(proc, self.degree + self.pts_angle)
-        Y1 = self.Y + self.turtle_size * \
-            self.COS(proc, self.degree + self.pts_angle)
-        X2 = self.X - self.turtle_size * \
-            self.SIN(proc, self.degree - self.pts_angle)
-        Y2 = self.Y + self.turtle_size * \
-            self.COS(proc, self.degree - self.pts_angle)
+        X1 = (self.X - self.turtle_size *
+              self.SIN(proc, self.degree + self.pts_angle))
+        Y1 = (self.Y + self.turtle_size *
+              self.COS(proc, self.degree + self.pts_angle))
+        X2 = (self.X - self.turtle_size *
+              self.SIN(proc, self.degree - self.pts_angle))
+        Y2 = (self.Y + self.turtle_size *
+              self.COS(proc, self.degree - self.pts_angle))
         if self.drawn:
             self.turtle.undraw()
         self.turtle = Polygon(
